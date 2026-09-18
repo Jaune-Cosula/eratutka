@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Henkilökohtainen data: oma metsästysalue ja pannan laitetunnus. Säilytetään
+# levyllä, mutta ei versiohallinnassa, etteivät ne kulkeudu repon mukana.
+area.json
+IK122T-Pro-ID-tunnus
+

@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Leaflet Custom UI & Controls */
+.leaflet-bottom.leaflet-right {
+  margin-bottom: 34px !important;
+  margin-right: 10px !important;
+  z-index: 900 !important;
+}
+
+.leaflet-bottom.leaflet-left {
+  margin-bottom: 34px !important;
+  margin-left: 8px !important;
+  z-index: 900 !important;
+}
+
+.leaflet-control-attribution {
+  background-color: rgba(28, 25, 23, 0.75) !important;
+  color: #a8a29e !important;
+  font-size: 9px !important;
+  border-radius: 6px !important;
+  padding: 1px 6px !important;
+  border: 1px solid rgba(87, 83, 78, 0.3) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+.leaflet-control-zoom {
+  margin: 0 !important;
+  width: 40px !important;
+  border: 1px solid rgba(120, 113, 108, 0.5) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4) !important;
+  background-color: rgba(28, 25, 23, 0.9) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  background-color: rgba(28, 25, 23, 0.9) !important;
+  color: #f59e0b !important;
+  width: 40px !important;
+  height: 38px !important;
+  line-height: 38px !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  border-bottom: 1px solid rgba(87, 83, 78, 0.4) !important;
+  transition: all 0.15s ease !important;
+}
+
+.leaflet-control-zoom-in:hover,
+.leaflet-control-zoom-out:hover {
+  background-color: rgba(41, 37, 36, 0.95) !important;
+  color: #fbbf24 !important;
+}

@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profile and account information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "huntingClub": { "type": "string" },
+        "createdAt": { "type": "number font" }
+      },
+      "required": ["uid", "email", "displayName"]
+    },
+    "dogs": {
+      "title": "User Dogs",
+      "description": "Registered hunting dogs for user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "name": { "type": "string" },
+        "breed": { "type": "string" },
+        "collarId": { "type": "string" },
+        "color": { "type": "string" }
+      }
+    },
+    "sessions": {
+      "title": "Hunt Sessions",
+      "description": "Active hunt sessions shared among hunters. The document ID is the session's random hunt key (32 hex chars) and acts as the capability that grants access; there is deliberately no way to list this collection.",
+      "type": "object",
+      "properties": {
+        "sessionInfo": { "type": "object" },
+        "dogs": { "type": "array" },
+        "annotations": { "type": "array" },
+        "members": { "type": "array" },
+        "radioMessages": { "type": "array" },
+        "deletedDogIds": { "type": "array" },
+        "updatedAt": { "type": "number" }
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Erätutka",
+  "description": "Maastokartta- ja koirapaikannussovellus metsästykseen ja ulkoiluun realiaikaisella tutkalla ja maaston merkinnöillä",
+  "requestFramePermissions": ["geolocation"]
+}
