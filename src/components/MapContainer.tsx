@@ -103,6 +103,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const dogTracksRef = useRef<Map<string, L.FeatureGroup>>(new Map());
   const hunterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const hunterPolylineRef = useRef<L.Polyline | null>(null);
+  const dogBearingArrowRef = useRef<L.Marker | null>(null);
   const sectorPolygonsRef = useRef<Map<string, L.Polygon>>(new Map());
   const annoMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const geofenceCirclesRef = useRef<Map<string, L.Circle>>(new Map());
@@ -245,6 +246,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       rulerPolylineRef.current = null;
       rulerBadgeRef.current = null;
       hunterPolylineRef.current = null;
+      dogBearingArrowRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -881,9 +883,41 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       ? dogs.find((d) => d.id === selectedDogId && d.isActive)
       : dogs.find((d) => d.isActive) || dogs[0];
 
-    // The straight "line of sight" from the hunter to the tracked dog was removed: it
-    // crossed the map in every direction and, on a close zoom around a working dog, added
-    // more visual clutter than information.
+    // Direction to the tracked dog: a short arrow at the hunter's own position, rotated to
+    // point at the dog. It replaces the straight line that used to connect the two, which
+    // spanned the whole map and was easy to mistake for the dog's own track. Pixel-sized,
+    // so it reads the same at every zoom level, and interactive:false so it never blocks a
+    // tap on the markers beneath it.
+    if (trackedDog && userLocation && !selectedHunterId) {
+      const bearing = calculateBearing(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
+      const arrowColor = trackedDog.color || '#f59e0b';
+      const arrowHtml = `
+        <div style="width:72px; height:72px; position:relative; pointer-events:none; background:transparent; border:none; transform:rotate(${bearing}deg); transform-origin:50% 50%;">
+          <div style="position:absolute; left:50%; top:2px; margin-left:-8px; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:16px solid ${arrowColor}; filter:drop-shadow(0 1px 1px rgba(0,0,0,0.55));"></div>
+        </div>
+      `;
+      const arrowIcon = L.divIcon({
+        html: arrowHtml,
+        className: 'dog-bearing-arrow',
+        iconSize: [72, 72],
+        iconAnchor: [36, 36],
+      });
+      const userLatLng: [number, number] = [userLocation.lat, userLocation.lng];
+
+      if (dogBearingArrowRef.current) {
+        dogBearingArrowRef.current.setLatLng(userLatLng);
+        dogBearingArrowRef.current.setIcon(arrowIcon);
+      } else {
+        dogBearingArrowRef.current = L.marker(userLatLng, {
+          icon: arrowIcon,
+          interactive: false,
+          zIndexOffset: -200,
+        }).addTo(layerGroup);
+      }
+    } else if (dogBearingArrowRef.current) {
+      layerGroup.removeLayer(dogBearingArrowRef.current);
+      dogBearingArrowRef.current = null;
+    }
 
     // 4. Safety Sectors (Removed per user request)
     sectorPolygonsRef.current.forEach((poly) => layerGroup.removeLayer(poly));
