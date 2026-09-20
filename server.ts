@@ -109,6 +109,13 @@ function parseBattery(val: any, fallback = 95): number {
 const MIN_PLAUSIBLE_TIMESTAMP_MS = 946684800000;
 
 /**
+ * How old a gateway-reported bark timestamp may be and still count as a *new* bark. Far
+ * longer than the 5 s poll so a bark between two polls is never missed, but short enough
+ * that starting the app next to a collar that barked hours ago does not announce a bark.
+ */
+const BARK_EVENT_MAX_AGE_MS = 60 * 1000;
+
+/**
  * Parses a numeric query parameter into a bounded integer. A garbage value previously
  * became NaN, and NaN then slipped through Math.min/Math.max: `limit` of NaN turned
  * `slice(-NaN)` into "return everything", and NaN `hours`/`since` silently produced an
@@ -152,6 +159,50 @@ function normalizeTimestampMs(raw: any, fallback: number = Date.now()): number {
   if (ms > now + 24 * 60 * 60 * 1000 || ms < MIN_PLAUSIBLE_TIMESTAMP_MS) return fallback;
 
   return Math.round(ms);
+}
+
+/**
+ * Interprets the gateway's free-form `alarm` field.
+ *
+ * Deliberately narrow: only values that clearly mean "the dog is barking" count. A false
+ * bark alert sends a hunter after a silent dog, which is worse than missing one, so
+ * battery, geofence and SOS alarms must never trip it.
+ */
+function alarmIndicatesBarking(raw: any): boolean {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (!value) return false;
+  if (value === 'none' || value === 'normal' || value === 'false' || value === '0') return false;
+  return value.includes('bark') || value.includes('hauk') || value === 'sound';
+}
+
+/**
+ * Reads the bark state a gateway reports for one device.
+ *
+ * Gateways differ in how they express it: some publish a live flag (`isBarking` or
+ * `barking`), some a rate, some only an alarm string, and some only the timestamp of the
+ * last bark. A bark is momentary while polling is not, so the timestamp is the most
+ * reliable of the four - the live flag has usually already cleared by the next poll.
+ */
+function readBarkFromGatewayItem(item: any): { isBarking: boolean; barkRate: number; lastBarkTime: number } {
+  if (!item || typeof item !== 'object') return { isBarking: false, barkRate: 0, lastBarkTime: 0 };
+  const attrs = item.attributes || {};
+
+  const barkRate =
+    Number(item.barkRate ?? item.bark ?? item.barkCount ?? attrs.barkRate ?? attrs.bark ?? 0) || 0;
+
+  const isBarking = Boolean(
+    item.isBarking ||
+      item.barking ||
+      attrs.isBarking ||
+      attrs.barking ||
+      alarmIndicatesBarking(item.alarm) ||
+      alarmIndicatesBarking(attrs.alarm) ||
+      barkRate > 0
+  );
+
+  const lastBarkTime = normalizeTimestampMs(item.lastBarkTime ?? attrs.lastBarkTime, 0);
+
+  return { isBarking, barkRate, lastBarkTime };
 }
 
 function appendGpsHistory(deviceId: string, point: {
@@ -510,6 +561,7 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
       let foundTimestamp = Date.now();
       let foundStatus = 'paikallaan';
       let foundBarkRate = 0;
+      let foundLastBarkTime = 0;
       let foundId = cleanId || '';
       let foundSatellites = 11;
       let foundCsq = 24;
@@ -641,12 +693,10 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                   item.timestamp ?? item.lastSeen ?? item.time
                 );
 
-                const itemBarkRate =
-                  Number(
-                    item.barkRate ?? item.bark ?? item.attributes?.barkRate ?? item.attributes?.bark ?? 0
-                  ) || 0;
-                const itemIsBarking = Boolean(item.isBarking || item.attributes?.barking || itemBarkRate > 0);
-                foundBarkRate = itemBarkRate > 0 ? itemBarkRate : itemIsBarking ? 15 : 0;
+                const itemBark = readBarkFromGatewayItem(item);
+                const itemIsBarking = itemBark.isBarking;
+                foundBarkRate = itemBark.barkRate > 0 ? itemBark.barkRate : itemIsBarking ? 15 : 0;
+                foundLastBarkTime = itemBark.lastBarkTime;
 
                 foundSatellites = Number(
                   item.satellites ??
@@ -692,9 +742,9 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                 foundHeading = Number(item.heading ?? item.bearing ?? item.course ?? 0) || 0;
                 foundTimestamp = normalizeTimestampMs(item.timestamp ?? item.lastSeen);
 
-                const itemBarkRate = Number(item.barkRate ?? item.bark ?? 0) || 0;
-                const itemIsBarking = Boolean(item.isBarking || itemBarkRate > 0);
-                foundBarkRate = itemBarkRate > 0 ? itemBarkRate : itemIsBarking ? 15 : 0;
+                const itemBark = readBarkFromGatewayItem(item);
+                foundBarkRate = itemBark.barkRate > 0 ? itemBark.barkRate : itemBark.isBarking ? 15 : 0;
+                foundLastBarkTime = itemBark.lastBarkTime;
 
                 foundSatellites = Number(item.satellites ?? item.sat ?? item.sats ?? 12);
                 foundCsq = Number(item.csq ?? item.signal ?? 25);
@@ -797,10 +847,30 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
     ) {
       // Check existing record for barking grace period (2-3 position fixes hold)
       const existingRec = findMatchingGpsRecord(cleanId || foundId);
+
+      // A bark is momentary while polling is not: by the time we ask, the live flag has
+      // usually already cleared. A gateway-reported bark timestamp that is newer than the
+      // one we hold therefore counts as a bark in its own right, and drives the hold logic
+      // below - which is what keeps the alert up for the next few fixes.
+      const previousBarkTs = existingRec?.lastBarkTimestamp || 0;
+      const isFreshGatewayBark =
+        foundLastBarkTime > previousBarkTs && Date.now() - foundLastBarkTime < BARK_EVENT_MAX_AGE_MS;
+      if (isFreshGatewayBark) {
+        foundBarkRate = Math.max(foundBarkRate, 15);
+      }
+
+      // Carry the gateway's bark time into the record even when it is too old to alert on:
+      // the UI can then show when the dog last barked without a stale bark looking live.
+      const carriedBarkTs = Math.max(foundLastBarkTime, previousBarkTs) || undefined;
+
       let barkHoldFixes = 0;
       let effectiveBarkRate = foundBarkRate;
       let effectiveIsBarking = foundBarkRate > 0;
-      let lastBarkTs = foundBarkRate > 0 ? foundTimestamp : existingRec?.lastBarkTimestamp;
+      let lastBarkTs = isFreshGatewayBark
+        ? foundLastBarkTime
+        : foundBarkRate > 0
+        ? foundTimestamp
+        : carriedBarkTs;
       let recentBark = foundBarkRate > 0 ? foundBarkRate : existingRec?.recentBarkRate;
 
       if (foundBarkRate > 0) {
@@ -980,15 +1050,9 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
 
                 if (!isNaN(latVal) && !isNaN(lngVal) && latVal !== 0 && lngVal !== 0) {
                   const ts = normalizeTimestampMs(item.timestamp ?? item.lastSeen ?? item.time);
-                  const bark =
-                    Number(
-                      item.barkRate ??
-                        item.bark ??
-                        item.attributes?.barkRate ??
-                        item.attributes?.bark ??
-                        0
-                    ) || 0;
-                  const isBark = bark > 0 || item.isBarking === true || item.attributes?.barking === true;
+                  const histBark = readBarkFromGatewayItem(item);
+                  const bark = histBark.barkRate;
+                  const isBark = histBark.isBarking;
                   const pt: GpsPointHistoryRecord = {
                     lat: latVal,
                     lng: lngVal,

@@ -326,7 +326,9 @@ export function useDogTracker({
 
               if (rawBarkRate > 0) {
                 barkHoldRemainingFixes = 3; // Reset hold to 3 position fixes
-                lastBarkTimestamp = data.timestamp || now;
+                // The gateway timestamps the bark itself, which is more accurate than the
+                // moment we happened to poll for it.
+                lastBarkTimestamp = data.lastBarkTimestamp || data.timestamp || now;
                 recentBarkRate = rawBarkRate;
                 finalBarkRate = rawBarkRate;
 
