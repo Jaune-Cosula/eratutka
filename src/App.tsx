@@ -960,6 +960,7 @@ export default function App() {
             toggleGps={toggleGps}
             isGpsTracking={isGpsTracking}
             mapFocusTarget={mapFocusTarget}
+            myNickname={currentSession?.myNickname}
           />
         )}
 

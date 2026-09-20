@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dog } from '../types';
 import { fetchDevicePosition, extractTractiveToken } from '../services/collarService';
+import { DOG_COLOR_PALETTE } from '../data/dogColors';
 import {
   X,
   Zap,
@@ -21,6 +22,8 @@ export interface CollarSyncModalProps {
   onClose: () => void;
   onUpdateDog: (dogId: string, updates: Partial<Dog>) => void;
   isDarkMode?: boolean;
+  /** Colours worn by the other dogs in this hunt, shown so a clash is easy to spot. */
+  otherDogColors?: string[];
 }
 
 export type IcarSyncModalProps = CollarSyncModalProps;
@@ -31,6 +34,7 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
   onClose,
   onUpdateDog,
   isDarkMode = true,
+  otherDogColors = [],
 }) => {
   // Direct Erätutka GPS Server & Micro Gateway state
   const [directId, setDirectId] = useState(
@@ -311,6 +315,49 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+          {/* The dog's map colour is a display setting, so it applies at once rather than
+              waiting for the form's save button. Swatches worn by another dog in this hunt
+              are flagged, which is the whole reason to change it. */}
+          <div className="p-3.5 rounded-2xl bg-stone-950/80 border border-stone-800">
+            <label className="block text-xs font-bold uppercase tracking-wider text-amber-400 mb-2.5">
+              Koiran tunnusväri kartalla
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              {DOG_COLOR_PALETTE.map(({ value: c, label }) => {
+                const selected = String(dog.color || '').toLowerCase() === c.toLowerCase();
+                const sharedWithOther = otherDogColors.includes(c.toLowerCase());
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => onUpdateDog(dog.id, { color: c })}
+                    title={sharedWithOther ? `${label} — sama väri toisella koiralla` : label}
+                    aria-label={label}
+                    aria-pressed={selected}
+                    className={`relative w-8 h-8 rounded-full transition-transform ${
+                      selected ? 'scale-125 ring-2 ring-amber-400 shadow-lg' : 'opacity-70 hover:opacity-100'
+                    } ${sharedWithOther && !selected ? 'ring-2 ring-red-500/70' : ''}`}
+                    style={{ backgroundColor: c }}
+                  >
+                    {sharedWithOther && (
+                      <span
+                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-stone-950 border border-red-500 text-[10px] leading-[14px] text-red-400 font-bold text-center"
+                        aria-hidden="true"
+                      >
+                        !
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-stone-400 mt-2.5 leading-relaxed">
+              {otherDogColors.length > 0
+                ? 'Punaisella merkityt värit ovat jo toisen koiran käytössä tässä jahdissa. Väri päivittyy heti koko jahtiporukalle.'
+                : 'Väri näkyy kartalla ja tutkassa, ja se päivittyy koko jahtiporukalle.'}
+            </p>
+          </div>
+
           <form onSubmit={handleSaveConfig} className="space-y-4">
             {/* DIRECT ERÄTUTKA GPS GATEWAY / GCE e2-micro */}
             <div className="space-y-4">

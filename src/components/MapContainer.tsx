@@ -52,6 +52,8 @@ interface MapContainerProps {
   toggleGps?: () => void;
   isGpsTracking?: boolean;
   mapFocusTarget?: { lat: number; lng: number } | null;
+  /** The local hunter's nickname, so their own team entry is not drawn on their own map. */
+  myNickname?: string;
 }
 
 export const MapContainer: React.FC<MapContainerProps> = ({
@@ -78,6 +80,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   toggleGps,
   isGpsTracking = false,
   mapFocusTarget,
+  myNickname,
 }) => {
   const { language } = useLanguage();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -743,24 +746,33 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
     // 3. Hunters / Team Members
     const currentHunterIds = new Set<string>();
+    const selfName = String(myNickname || '').trim().toLowerCase();
 
     team.forEach((member) => {
+      // The local hunter's own position is already drawn as the sky-blue "SINÄ" marker from
+      // the GPS fix. Drawing their team entry as well put them on their own map twice, in
+      // two markers that looked identical (both a blue circle with a white border).
+      if (selfName && String(member.name || '').trim().toLowerCase() === selfName) return;
+
       currentHunterIds.add(member.id);
       const hunterLatLng: [number, number] = [member.lat, member.lng];
 
       const isTrackedHunter = selectedHunterId === member.id;
 
+      // Amber rather than sky-blue: the same hue as the "SINÄ" marker made a hunter
+      // indistinguishable from oneself on the map, and made one hunter look like another's
+      // "you are here" dot.
       const hunterIconHtml = `
         <div class="flex flex-col items-center cursor-pointer relative">
           ${
             showHunterNames
-              ? `<div class="bg-sky-950/90 text-sky-200 border border-sky-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md mb-0.5 whitespace-nowrap">
+              ? `<div class="bg-amber-950/90 text-amber-200 border border-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md mb-0.5 whitespace-nowrap">
                   ${member.name} ${isTrackedHunter ? '🎯 (SEURANNASSA)' : ''}
                 </div>`
               : ''
           }
-          <div class="w-8 h-8 rounded-full bg-sky-600 text-white border-2 ${
-            isTrackedHunter ? 'border-amber-400 ring-4 ring-sky-500/60 animate-bounce' : 'border-white'
+          <div class="w-8 h-8 rounded-full bg-amber-600 text-white border-2 ${
+            isTrackedHunter ? 'border-white ring-4 ring-amber-300/70 animate-bounce' : 'border-amber-100'
           } flex items-center justify-center shadow-lg font-bold text-xs">
             🎯
           </div>

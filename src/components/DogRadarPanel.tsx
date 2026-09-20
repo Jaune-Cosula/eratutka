@@ -7,6 +7,7 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import { fetchDevicePosition, extractTractiveToken } from '../services/collarService';
 import { CollarSyncModal } from './CollarSyncModal';
+import { colorsUsedByOthers } from '../data/dogColors';
 import { RadarCollarCardList } from './radar/RadarCollarCardList';
 import { HunterRadarView } from './radar/HunterRadarView';
 import { CollarTelemetryGauges } from './radar/CollarTelemetryGauges';
@@ -80,7 +81,10 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
   const [isSyncingGps, setIsSyncingGps] = useState<boolean>(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
-  const selectedDog = dogs.find((d) => d.id === selectedDogId) || dogs[0];
+  // Deliberately no `|| dogs[0]` fallback: "Lopeta seuranta" clears the selection, and
+  // falling back to the first dog here made that button appear to do nothing. With no
+  // selection the panel shows its "pick a dog from the list" empty state instead.
+  const selectedDog = dogs.find((d) => d.id === selectedDogId);
 
   const handleManualSyncDog = async (dogToSync: Dog) => {
     if (!onUpdateDogTelemetry || isSyncingGps) return;
@@ -462,6 +466,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
           onClose={() => setShowCollarSyncModal(false)}
           onUpdateDog={onUpdateDogTelemetry}
           isDarkMode={isDarkMode}
+          otherDogColors={colorsUsedByOthers(dogs.filter((d) => d.id !== selectedDog.id))}
         />
       )}
     </div>

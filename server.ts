@@ -590,8 +590,15 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                     (cleanId.length >= 5 && dId.includes(cleanId)) ||
                     (targetName.length >= 4 && dName.includes(targetName))
                   );
-                }) || (list.length === 1 ? list[0] : undefined)
+                })
               : list[0];
+
+            // There used to be a `|| (list.length === 1 ? list[0] : undefined)` here. When
+            // the gateway happened to hold exactly one position, that made ANY requested
+            // device id resolve to it: a collar configured with a different id - or one
+            // sitting at home while another was in the field - was drawn at the working
+            // collar's coordinates as a second marker. No position is the honest answer
+            // when the id does not match; showing another collar's position is not.
 
             if (item) {
               const rawLat =

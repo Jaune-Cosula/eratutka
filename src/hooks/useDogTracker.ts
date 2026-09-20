@@ -89,14 +89,30 @@ export function useDogTracker({
     lastLocalSaveRef.current = Date.now();
   };
 
-  // Ensure selectedDogId points to an existing dog if available
+  // Pick a default dog once, when the list first becomes available.
+  //
+  // This deliberately does NOT re-select whenever the selection is empty. The old version
+  // did, which made the "Lopeta seuranta" (stop tracking) button appear to do nothing: it
+  // cleared the selection and this effect immediately put it back. An empty selection is a
+  // legitimate state - it means "no dog is being actively tracked".
+  const hasPickedInitialDogRef = useRef(false);
   useEffect(() => {
-    if (dogs.length > 0) {
-      if (!selectedDogId || !dogs.some((d) => d.id === selectedDogId)) {
-        setSelectedDogId(dogs[0].id);
-      }
-    } else {
+    if (dogs.length === 0) {
       setSelectedDogId(null);
+      return;
+    }
+
+    if (hasPickedInitialDogRef.current) {
+      // Keep whatever the user has selected; only drop it if that dog is really gone.
+      if (selectedDogId && !dogs.some((d) => d.id === selectedDogId)) {
+        setSelectedDogId(null);
+      }
+      return;
+    }
+
+    hasPickedInitialDogRef.current = true;
+    if (!selectedDogId) {
+      setSelectedDogId(dogs[0].id);
     }
   }, [dogs, selectedDogId]);
 

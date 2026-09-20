@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Dog } from '../types';
 import { extractTractiveToken } from '../services/collarService';
+import { DOG_COLOR_PALETTE } from '../data/dogColors';
 import {
   X,
   PlusCircle,
@@ -681,11 +682,14 @@ export const AddDogModal: React.FC<AddDogModalProps> = ({
               {trackerModel.includes('Tractive') || breed.toLowerCase().includes('kissa') ? 'Lemmikin tunnusväri kartalla' : 'Koiran tunnusväri kartalla'}
             </label>
             <div className="flex items-center space-x-3">
-              {['#ef4444', '#10b981', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4'].map((c) => (
+              {DOG_COLOR_PALETTE.map(({ value: c, label }) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
+                  title={label}
+                  aria-label={label}
+                  aria-pressed={color === c}
                   className={`w-8 h-8 rounded-full transition-transform ${
                     color === c ? 'scale-125 ring-2 ring-amber-400 shadow-lg' : 'opacity-70 hover:opacity-100'
                   }`}
