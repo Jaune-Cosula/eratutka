@@ -28,6 +28,13 @@ function extendBoundsSafely(bounds: L.LatLngBounds, lat: unknown, lng: unknown):
   bounds.extend([lat, lng]);
 }
 
+/**
+ * Colour of a track segment where the collar reported a bark. Deliberately not the dog's
+ * own colour: a barking dog has to be findable at a glance on a trail that may otherwise
+ * be the same hue (a red collar, for instance).
+ */
+const BARK_TRACK_COLOR = '#dc2626';
+
 interface MapContainerProps {
   mapLayer: MapLayerType;
   setMapLayer: (layer: MapLayerType) => void;
@@ -96,7 +103,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const dogTracksRef = useRef<Map<string, L.FeatureGroup>>(new Map());
   const hunterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const hunterPolylineRef = useRef<L.Polyline | null>(null);
-  const dogPolylineRef = useRef<L.Polyline | null>(null);
   const sectorPolygonsRef = useRef<Map<string, L.Polygon>>(new Map());
   const annoMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const geofenceCirclesRef = useRef<Map<string, L.Circle>>(new Map());
@@ -239,7 +245,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       rulerPolylineRef.current = null;
       rulerBadgeRef.current = null;
       hunterPolylineRef.current = null;
-      dogPolylineRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -528,7 +533,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
       if (showDogTracks && validTrackPoints.length > 1) {
         interface SegmentChunk {
-          isAjo: boolean;
+          isBarking: boolean;
           coords: [number, number][];
           latestTimestamp: number;
         }
@@ -540,28 +545,24 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           const pPrev = validTrackPoints[i - 1];
           const pCurr = validTrackPoints[i];
 
-          const distM = calculateDistance(pPrev.lat, pPrev.lng, pCurr.lat, pCurr.lng);
-          const dtSec = Math.max(1, Math.abs((pCurr.timestamp - pPrev.timestamp) / 1000));
-          const calcSpeedKmh = (distM / dtSec) * 3.6;
-          const effectiveSpeed = Math.max(pCurr.speed || 0, pPrev.speed || 0, calcSpeedKmh);
-          const effectiveBark = Math.max(pCurr.barkRate || 0, pPrev.barkRate || 0);
-
-          // Ajojälki: koira liikkuu (nopeus >= 1.5 km/h) ja haukkuu samanaikaisesti (barkRate > 0)
-          const isAjo = effectiveSpeed >= 1.5 && effectiveBark > 0;
+          // A segment is highlighted purely on barking; movement is deliberately not
+          // required. A dog barking at a tree while standing still is the moment a hunter
+          // most wants to find on the map, and it used to blend into the ordinary trail.
+          const isBarking = Math.max(pCurr.barkRate || 0, pPrev.barkRate || 0) > 0;
 
           if (!currentChunk) {
             currentChunk = {
-              isAjo,
+              isBarking,
               coords: [[pPrev.lat, pPrev.lng], [pCurr.lat, pCurr.lng]],
               latestTimestamp: pCurr.timestamp,
             };
-          } else if (currentChunk.isAjo === isAjo) {
+          } else if (currentChunk.isBarking === isBarking) {
             currentChunk.coords.push([pCurr.lat, pCurr.lng]);
             currentChunk.latestTimestamp = pCurr.timestamp;
           } else {
             chunks.push(currentChunk);
             currentChunk = {
-              isAjo,
+              isBarking,
               coords: [[pPrev.lat, pPrev.lng], [pCurr.lat, pCurr.lng]],
               latestTimestamp: pCurr.timestamp,
             };
@@ -584,15 +585,16 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           // Calculate track age within the 12-hour window (fades older portions gradually)
           const ageHours = Math.max(0, (now - chunk.latestTimestamp) / (3600 * 1000));
           const ageFraction = Math.min(1, Math.max(0, ageHours / 12));
-          const opacity = chunk.isAjo
-            ? Math.max(0.6, 0.95 - ageFraction * 0.35)
-            : Math.max(0.35, 0.8 - ageFraction * 0.45);
+          const opacity = chunk.isBarking
+            ? Math.max(0.65, 0.95 - ageFraction * 0.3)
+            : Math.max(0.5, 0.85 - ageFraction * 0.4);
 
           const polyline = L.polyline(chunk.coords, {
-            color: dog.color,
-            weight: chunk.isAjo ? 5.5 : 3,
+            // Solid rather than dashed: the dashes turned into visual noise when zoomed in
+            // close to a dog circling inside a small area.
+            color: chunk.isBarking ? BARK_TRACK_COLOR : dog.color,
+            weight: chunk.isBarking ? 4 : 2,
             opacity,
-            dashArray: chunk.isAjo ? undefined : '5, 8',
             lineCap: 'round',
             lineJoin: 'round',
           });
@@ -603,9 +605,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               ? `${ageMinutes} min sitten`
               : `${(ageMinutes / 60).toFixed(1)} h sitten`;
 
-          const tooltipHtml = chunk.isAjo
-            ? `🐕 <strong>${dog.name}</strong>: <strong>Ajojälki</strong> (haukkuajo, ${ageText})`
-            : `🐕 <strong>${dog.name}</strong>: Hakujälki (${ageText})`;
+          const tooltipHtml = chunk.isBarking
+            ? `🐕 <strong>${dog.name}</strong>: <strong>Haukku</strong> (${ageText})`
+            : `🐕 <strong>${dog.name}</strong>: Jälki (${ageText})`;
 
           polyline.bindTooltip(tooltipHtml, {
             sticky: true,
@@ -879,29 +881,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       ? dogs.find((d) => d.id === selectedDogId && d.isActive)
       : dogs.find((d) => d.isActive) || dogs[0];
 
-    if (trackedDog && userLocation && !selectedHunterId) {
-      const userLatLng: [number, number] = [userLocation.lat, userLocation.lng];
-      const dogLatLng: [number, number] = [trackedDog.lat, trackedDog.lng];
-      const lineCoords = [userLatLng, dogLatLng];
-
-      if (dogPolylineRef.current) {
-        dogPolylineRef.current.setLatLngs(lineCoords);
-        // Also restyle: selecting a different dog reused the previous dog's colour.
-        dogPolylineRef.current.setStyle({ color: trackedDog.color || '#f59e0b' });
-      } else {
-        dogPolylineRef.current = L.polyline(lineCoords, {
-          color: trackedDog.color || '#f59e0b',
-          weight: 2.5,
-          dashArray: '6, 6',
-          opacity: 0.85,
-        }).addTo(layerGroup);
-      }
-    } else {
-      if (dogPolylineRef.current) {
-        layerGroup.removeLayer(dogPolylineRef.current);
-        dogPolylineRef.current = null;
-      }
-    }
+    // The straight "line of sight" from the hunter to the tracked dog was removed: it
+    // crossed the map in every direction and, on a close zoom around a working dog, added
+    // more visual clutter than information.
 
     // 4. Safety Sectors (Removed per user request)
     sectorPolygonsRef.current.forEach((poly) => layerGroup.removeLayer(poly));
