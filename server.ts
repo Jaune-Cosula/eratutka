@@ -1740,6 +1740,13 @@ interface LiveSessionData {
   activeClients: Map<string, number>;
   deletedDogIds: Set<string>;
   /**
+   * Identifiers revived by a client that just (re-)added the dog, mapped to when. A
+   * deleted identifier used to be permanent: the set only ever grew, so a collar that had
+   * once been removed could never be added back to that hunt. Revived ids are broadcast
+   * for a short while so the other participants can drop them from their own registries.
+   */
+  revivedDogIds?: Map<string, number>;
+  /**
    * Session access control. `huntKey` is stored in plaintext on purpose: the server
    * must be able to hand it out from /api/session/resolve to participants who only
    * know the code and PIN, and the same in-memory record already holds every position
@@ -1914,6 +1921,72 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+/**
+ * How long a revived identifier keeps being broadcast. Long enough for every participant
+ * to poll once and drop it from their own registry, short enough not to linger.
+ */
+const REVIVED_ID_BROADCAST_MS = 10 * 60 * 1000;
+
+/**
+ * Every spelling of one identifier that can end up in a session's deleted registry:
+ * the raw value, case variants, the "ID:" prefix stripped, leading zeros stripped and the
+ * Tractive token. Both deleting and reviving go through this one function so the two can
+ * never drift apart - reviving has to remove exactly what deleting added.
+ */
+function deletedIdVariants(rawId: string): string[] {
+  const raw = String(rawId || '').trim();
+  if (!raw) return [];
+
+  const out = new Set<string>();
+  const add = (value: string) => {
+    if (value) out.add(value);
+  };
+
+  add(raw);
+  add(raw.toLowerCase());
+  add(raw.toUpperCase());
+
+  const clean = raw.replace(/^ID[:\s]*/i, '').trim();
+  if (clean) {
+    add(clean);
+    add(clean.toLowerCase());
+    add(clean.toUpperCase());
+    const noZeros = clean.replace(/^0+/, '');
+    if (noZeros) {
+      add(noZeros);
+      add(noZeros.toLowerCase());
+      add(noZeros.toUpperCase());
+    }
+  }
+
+  const token = extractTractiveToken(raw);
+  if (token) {
+    add(token);
+    add(token.toLowerCase());
+    add(token.toUpperCase());
+  }
+
+  return Array.from(out);
+}
+
+/** Marks one identifier as deleted, in every spelling. */
+function markDeletedOnServer(deletedSet: Set<string>, rawId: string): void {
+  for (const variant of deletedIdVariants(rawId)) deletedSet.add(variant);
+}
+
+/**
+ * Revives one identifier: removes every spelling from the deleted registry, so a dog added
+ * again is no longer filtered out by `isDogDeletedOnServer`.
+ */
+function reviveOnServer(deletedSet: Set<string>, rawId: string): void {
+  for (const variant of deletedIdVariants(rawId)) deletedSet.delete(variant);
+}
+
+/** Stops broadcasting a revive, used when the same identifier is deleted again. */
+function clearRevivedOnServer(reviveMap: Map<string, number>, rawId: string): void {
+  for (const variant of deletedIdVariants(rawId)) reviveMap.delete(variant);
+}
+
 function isDogDeletedOnServer(dog: any, deletedSet?: Set<string>): boolean {
   if (!dog || !deletedSet || deletedSet.size === 0) return false;
   // Only identifiers unique to one physical collar. `dog.name` is deliberately absent:
@@ -2078,23 +2151,14 @@ app.post('/api/session/:code/dogs/delete', (req, res) => {
 
     for (const raw of idsToPurge) {
       if (!raw) continue;
-      existing.deletedDogIds.add(raw);
-      existing.deletedDogIds.add(raw.toLowerCase());
-      existing.deletedDogIds.add(raw.toUpperCase());
-      const clean = raw.replace(/^ID[:\s]*/i, '').trim();
-      if (clean) {
-        existing.deletedDogIds.add(clean);
-        existing.deletedDogIds.add(clean.toLowerCase());
-        const noZeros = clean.replace(/^0+/, '');
-        if (noZeros) existing.deletedDogIds.add(noZeros);
-      }
-      const token = extractTractiveToken(raw);
-      if (token) {
-        existing.deletedDogIds.add(token);
-        existing.deletedDogIds.add(token.toLowerCase());
-      }
+      markDeletedOnServer(existing.deletedDogIds, raw);
+      // A delete supersedes an earlier revive of the same identifier: without this, the
+      // revive would keep being broadcast for its full window and would undo a dog
+      // deleted shortly after it was added.
+      if (existing.revivedDogIds) clearRevivedOnServer(existing.revivedDogIds, raw);
       // Purge from directGpsStore
       directGpsStore.delete(raw);
+      const clean = raw.replace(/^ID[:\s]*/i, '').trim();
       if (clean) directGpsStore.delete(clean);
     }
 
@@ -2122,7 +2186,7 @@ app.post('/api/session/:code/relay', (req, res) => {
       return denySessionAccess(res, 'Varajahtisessiota DEFAULT ei tueta.');
     }
 
-    const { sessionInfo, dogs, annotations, members, radioMessages, clientId, deletedDogIds } = req.body;
+    const { sessionInfo, dogs, annotations, members, radioMessages, clientId, deletedDogIds, revivedDogIds } = req.body;
     const now = Date.now();
 
     let existing = sessionLiveStore.get(code);
@@ -2146,17 +2210,34 @@ app.post('/api/session/:code/relay', (req, res) => {
 
     if (Array.isArray(deletedDogIds)) {
       for (const raw of deletedDogIds) {
-        if (!raw) continue;
-        const s = String(raw).trim();
+        const s = String(raw || '').trim();
         if (!s) continue;
-        existing.deletedDogIds.add(s);
-        existing.deletedDogIds.add(s.toLowerCase());
-        const clean = s.replace(/^ID[:\s]*/i, '').trim();
-        if (clean) existing.deletedDogIds.add(clean);
-        const token = extractTractiveToken(s);
-        if (token) existing.deletedDogIds.add(token);
+        markDeletedOnServer(existing.deletedDogIds, s);
+        // A delete supersedes an earlier revive of the same identifier: without this, the
+        // revive would keep being broadcast for its full window and would undo a dog
+        // deleted shortly after being added.
+        if (existing.revivedDogIds) clearRevivedOnServer(existing.revivedDogIds, s);
         directGpsStore.delete(s);
+        const clean = s.replace(/^ID[:\s]*/i, '').trim();
         if (clean) directGpsStore.delete(clean);
+      }
+    }
+
+    // A client that just added a dog says so explicitly. Without this the deleted registry
+    // is a one-way ratchet: a collar removed once could never be added back, because this
+    // endpoint kept broadcasting the deletion and every client re-applied it.
+    if (Array.isArray(revivedDogIds) && revivedDogIds.length > 0) {
+      const reviveMap = existing.revivedDogIds || new Map<string, number>();
+      existing.revivedDogIds = reviveMap;
+      for (const raw of revivedDogIds) {
+        const s = String(raw || '').trim();
+        if (!s) continue;
+        reviveOnServer(existing.deletedDogIds, s);
+        reviveMap.set(s, now);
+      }
+      // Drop broadcasts that have had time to reach everyone.
+      for (const [id, at] of reviveMap.entries()) {
+        if (now - at > REVIVED_ID_BROADCAST_MS) reviveMap.delete(id);
       }
     }
 
@@ -2259,6 +2340,13 @@ app.get('/api/session/:code/relay', (req, res) => {
     }
 
     const safeDogs = (data.dogs || []).filter((d: any) => !isDogDeletedOnServer(d, data.deletedDogIds));
+
+    // Broadcast recently revived ids so participants drop them from their own registries,
+    // which is what lets a re-added collar appear for the whole party again.
+    const revivedIds = Array.from(data.revivedDogIds?.entries() || [])
+      .filter(([, at]) => Date.now() - at <= REVIVED_ID_BROADCAST_MS)
+      .map(([id]) => id);
+
     return res.json({
       success: true,
       exists: true,
@@ -2267,6 +2355,7 @@ app.get('/api/session/:code/relay', (req, res) => {
       isIdleStandby: data.isIdleStandby,
       activeClientsCount: data.activeClients.size,
       deletedDogIds: Array.from(data.deletedDogIds || []),
+      revivedDogIds: revivedIds,
       data: {
         sessionInfo: data.sessionInfo,
         dogs: safeDogs,
@@ -2274,6 +2363,7 @@ app.get('/api/session/:code/relay', (req, res) => {
         members: data.members,
         radioMessages: data.radioMessages,
         deletedDogIds: Array.from(data.deletedDogIds || []),
+        revivedDogIds: revivedIds,
       },
     });
   } catch (error: any) {

@@ -401,6 +401,15 @@ function normalizeIdentifier(raw: string | undefined | null): string[] {
   return Array.from(results);
 }
 
+/**
+ * The identifiers a dog is known by: its own id plus every collar identifier and their
+ * normalized variants. Exposed so that a caller reviving a dog speaks about exactly the
+ * same strings the deletion registry was written with.
+ */
+export function getDogIdentifiers(dog: Dog | string | undefined | null): string[] {
+  return extractAllDogIdentifiers(dog);
+}
+
 function extractAllDogIdentifiers(item: Dog | string | undefined | null): string[] {
   if (!item) return [];
   if (typeof item === 'string') {

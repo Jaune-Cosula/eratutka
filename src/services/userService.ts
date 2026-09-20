@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Dog, MapAnnotation, HuntSession, TeamMember, RadioMessage } from '../types';
-import { getDeletedDogIds, markDogAsDeleted, isDogDeleted } from '../utils/geoUtils';
+import { getDeletedDogIds, markDogAsDeleted, clearDogFromDeleted, isDogDeleted } from '../utils/geoUtils';
 
 export interface UserProfile {
   uid: string;
@@ -128,6 +128,7 @@ async function pushToLiveRelay(
     members?: TeamMember[];
     radioMessages?: RadioMessage[];
     deletedDogIds?: string[];
+    revivedDogIds?: string[];
   }
 ): Promise<void> {
   try {
@@ -400,9 +401,7 @@ export const subscribeToSessionFirebase = (
         const json = await resp.json();
         if (json.success && json.updated && json.data) {
           lastRelayTimestamp = json.timestamp || Date.now();
-          if (Array.isArray(json.data.deletedDogIds)) {
-            markDogAsDeleted(...json.data.deletedDogIds);
-          }
+          applySessionDeletionSignals(json.data);
           const rawDogs = Array.isArray(json.data.dogs) ? (json.data.dogs as Dog[]) : [];
           const safeDogs = rawDogs.filter((d) => !isDogDeleted(d));
 
@@ -432,9 +431,7 @@ export const subscribeToSessionFirebase = (
         (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            if (Array.isArray(data.deletedDogIds)) {
-              markDogAsDeleted(...data.deletedDogIds);
-            }
+            applySessionDeletionSignals(data);
             const rawDogs = Array.isArray(data.dogs) ? (data.dogs as Dog[]) : [];
             const safeDogs = rawDogs.filter((d) => !isDogDeleted(d));
 
@@ -461,6 +458,46 @@ export const subscribeToSessionFirebase = (
     clearInterval(relayInterval);
     unsubscribeFirestore();
   };
+};
+
+/**
+ * Applies the session's deletion bookkeeping from a payload we just received.
+ *
+ * Newly deleted ids are remembered, and ids another hunter has *revived* are forgotten.
+ * Without the revive half, a collar deleted once could never be added again: this side
+ * would keep filtering the dog out of every payload, no matter how often it was re-added.
+ */
+const applySessionDeletionSignals = (payload: {
+  deletedDogIds?: unknown;
+  revivedDogIds?: unknown;
+}): void => {
+  const deleted = Array.isArray(payload?.deletedDogIds) ? payload.deletedDogIds : [];
+  const revived = Array.isArray(payload?.revivedDogIds) ? payload.revivedDogIds : [];
+
+  if (deleted.length > 0) {
+    markDogAsDeleted(...deleted);
+  }
+
+  // The same identifier can legitimately appear in both lists: the deletion is older
+  // state, the revive is the newer event. Where they collide, trust the deletion -
+  // clearing here would silently undo a delete made after the revive.
+  const deletedKeys = new Set<string>();
+  for (const id of deleted) {
+    const s = String(id || '').trim();
+    if (s) {
+      deletedKeys.add(s);
+      deletedKeys.add(s.toLowerCase());
+    }
+  }
+
+  const toRevive = revived.filter((id) => {
+    const s = String(id || '').trim();
+    return Boolean(s) && !deletedKeys.has(s) && !deletedKeys.has(s.toLowerCase());
+  });
+
+  if (toRevive.length > 0) {
+    clearDogFromDeleted(...toRevive);
+  }
 };
 
 /**
@@ -533,9 +570,7 @@ export const fetchSessionFromFirebase = async (
     const snap = await getDoc(sessionRef);
     if (snap.exists()) {
       const data = snap.data();
-      if (Array.isArray(data.deletedDogIds)) {
-        markDogAsDeleted(...data.deletedDogIds);
-      }
+      applySessionDeletionSignals(data);
       const rawDogs = Array.isArray(data.dogs) ? (data.dogs as Dog[]) : [];
       const safeDogs = rawDogs.filter((d) => !isDogDeleted(d));
 
@@ -577,6 +612,7 @@ export const saveSessionPartial = async (
     members?: TeamMember[];
     radioMessages?: RadioMessage[];
     deletedDogIds?: string[];
+    revivedDogIds?: string[];
   },
   forceImmediate = false
 ): Promise<void> => {
@@ -598,6 +634,13 @@ export const saveSessionPartial = async (
     deletedDogIds: deletedIds,
   };
 
+  // A revival is a momentary event, not accumulated state: it belongs on the fast relay
+  // channel only. Persisting it would leave a stale "this was revived" note next to a
+  // later deletion of the same collar in the same blob, and with no ordering in the data
+  // the stale note would win and silently undo that deletion.
+  const revivedIds = Array.isArray(partialData.revivedDogIds) ? partialData.revivedDogIds : undefined;
+  delete (payloadToStore as Record<string, unknown>).revivedDogIds;
+
   // 1. Always save to LocalStorage immediately (instant & offline).
   //    The dog list is deliberately not duplicated here: with 12 h of track history
   //    per dog it reaches several megabytes, and it is already persisted under
@@ -612,7 +655,7 @@ export const saveSessionPartial = async (
   } catch {}
 
   // 2. Always push to In-Memory Server Relay immediately (0 Firebase writes, instant sync across all hunters)
-  pushToLiveRelay(code, payloadToStore);
+  pushToLiveRelay(code, revivedIds ? { ...payloadToStore, revivedDogIds: revivedIds } : payloadToStore);
 
   // 3. Skip the cloud write when there is no capability key (nothing to write to), when
   //    the Firestore quota is exceeded, or when this client is known to be outdated.
@@ -705,12 +748,17 @@ export const saveSessionAnnotations = async (
 export const saveSessionDogs = async (
   sessionCode: string,
   dogs: Dog[],
-  forceImmediate = false
+  forceImmediate = false,
+  revivedDogIds?: string[]
 ): Promise<void> => {
   const safeDogs = (dogs || []).filter((d) => !isDogDeleted(d));
   return saveSessionPartial(
     sessionCode,
-    { dogs: safeDogs, deletedDogIds: Array.from(getDeletedDogIds()) },
+    {
+      dogs: safeDogs,
+      deletedDogIds: Array.from(getDeletedDogIds()),
+      ...(revivedDogIds && revivedDogIds.length > 0 ? { revivedDogIds } : {}),
+    },
     forceImmediate
   );
 };

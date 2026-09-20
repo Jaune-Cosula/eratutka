@@ -4,6 +4,7 @@ import {
   calculateDistance,
   pruneExpiredTrackPoints,
   getDeletedDogIds,
+  getDogIdentifiers,
   markDogAsDeleted,
   clearDogFromDeleted,
   isDogDeleted,
@@ -470,7 +471,10 @@ export function useDogTracker({
     }
 
     if (sessionCode) {
-      saveSessionDogs(sessionCode, updatedList, true);
+      // Tell the session this collar is live again. The deletion registry is otherwise a
+      // one-way ratchet: the server keeps re-broadcasting the old deletion and every
+      // client re-applies it, so the dog would disappear again within a couple of seconds.
+      saveSessionDogs(sessionCode, updatedList, true, getDogIdentifiers(dogToAdd));
       try {
         const ch = new BroadcastChannel(`eratutka_channel_${sessionCode}`);
         ch.postMessage({ type: 'UPDATE_DOGS', dogs: updatedList });
