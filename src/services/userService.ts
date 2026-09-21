@@ -7,11 +7,11 @@ import {
   onSnapshot,
   deleteDoc,
   disableNetwork,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Dog, MapAnnotation, HuntSession, TeamMember, RadioMessage } from '../types';
 import {
-  getDeletedDogIds,
   markDogAsDeleted,
   clearDogFromDeleted,
   isDogDeleted,
@@ -619,6 +619,16 @@ const WRITE_THROTTLE_MS = 30000; // Cloud write at most once every 30 seconds fo
 const BURST_WRITE_THROTTLE_MS = 3000; // Minimum 3s interval between forceImmediate writes to prevent quota exhaustion on rapid clicks
 
 /**
+ * How long a hunt's cloud document outlives its last write before the database deletes it.
+ *
+ * Nothing else can clean sessions up: the rules deny client deletes, so an abandoned hunt
+ * would otherwise stay in Firestore forever. A TTL policy on `expiresAt` (set once in the
+ * Firebase console) lets Firestore do it, and refreshing the field on every write means an
+ * active hunt never expires while one that stopped a month ago goes away on its own.
+ */
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * Returns a copy of the payload with every `undefined` value removed, at any depth.
  *
  * Firestore rejects an explicit `undefined` anywhere in a write and rejects the *whole*
@@ -635,6 +645,13 @@ const BURST_WRITE_THROTTLE_MS = 3000; // Minimum 3s interval between forceImmedi
 const stripUndefinedDeep = <T,>(value: T): T => {
   if (Array.isArray(value)) {
     return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  // A Timestamp is an object with its own fields, so rebuilding it below would replace it
+  // with a plain `{seconds, nanoseconds}` map - Firestore would store a map, not a time, and
+  // a TTL policy on that field would silently never fire. Dates are handled below for the
+  // same reason.
+  if (value instanceof Timestamp) {
+    return value;
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const clean: Record<string, unknown> = {};
@@ -661,13 +678,10 @@ export const saveSessionPartial = async (
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
   const key = activeHuntKey;
-  // Firestore and the local session blob hold the registry as *state*: a hunter who joins or
-  // recovers reads it to learn which collars the hunt has deleted.
-  const deletedIds = Array.from(getDeletedDogIds());
-  // The relay carries deletions as *events*: only the ids this device still owes the server.
-  // Sending the registry here instead let a client that had not yet polled a revival
-  // re-assert an old deletion, and because a deletion beats a revival that undid a collar
-  // added back moments earlier - for the whole party, over and over.
+  // Deletions travel as *events*: only the ids this device still owes the server. Sending the
+  // registry instead let a client that had not yet polled a revival re-assert an old
+  // deletion, and because a deletion beats a revival that undid a collar added back moments
+  // earlier - for the whole party, over and over.
   const relayDeletedIds = partialData.deletedDogIds || getPendingDeletedIds();
   const safeDogs = partialData.dogs ? partialData.dogs.filter((d) => !isDogDeleted(d)) : undefined;
   // The PIN gates code-based joining and is verified server-side; it must never travel
@@ -681,8 +695,15 @@ export const saveSessionPartial = async (
     ...partialData,
     ...(safeSessionInfo ? { sessionInfo: safeSessionInfo } : {}),
     ...(safeDogs ? { dogs: safeDogs } : {}),
-    deletedDogIds: deletedIds,
+    expiresAt: Timestamp.fromMillis(Date.now() + SESSION_TTL_MS),
   };
+  // The deleted registry is deliberately not persisted, on any channel. It is shared by every
+  // client of the hunt and only ever grows, so whoever wrote last imposed its own copy on
+  // everyone else - and a client that had not yet polled a revival wrote back a deletion that
+  // had already been undone, which is what kept killing a collar seconds after it was added.
+  // The server's in-memory registry is the authority, fed by the events above; each device
+  // keeps its own from what the server broadcasts.
+  delete (payloadToStore as Record<string, unknown>).deletedDogIds;
 
   // A revival is a momentary event, not accumulated state: it belongs on the fast relay
   // channel only. Persisting it would leave a stale "this was revived" note next to a

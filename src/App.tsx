@@ -38,8 +38,6 @@ import {
   markDogAsDeleted,
   isDogDeleted,
   getDogIdentifiers,
-  getDeletedDogIds,
-  addPendingDeletedIds,
 } from './utils/geoUtils';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -1004,18 +1002,6 @@ export default function App() {
     setRadioMessages(sessionRadio);
     radioMessagesRef.current = sessionRadio;
     localStorage.setItem(`eratutka_radio_${finalSession.code}`, JSON.stringify(sessionRadio));
-
-    // Hand the server the deletions this device already knows about, once, on entering the
-    // hunt. The server keeps its registry in memory, so a restart empties it - and since
-    // clients no longer re-upload the registry on every write (that was what let a stale
-    // client undo a revival), nothing else would teach it again. The list goes through the
-    // pending-deletion outbox, which is the same verified path a delete takes: it is sent
-    // once and forgotten as soon as the server accepts it.
-    //
-    // Only the union of what Firestore, the relay and this device already agree on is sent,
-    // so this re-states the hunt's existing bookkeeping rather than asserting anything new.
-    // On a freshly created hunt the registry is empty, so this is a no-op.
-    addPendingDeletedIds(Array.from(getDeletedDogIds()));
 
     // Save full combined state to Firestore so all active participants see each other live
     await saveSessionToFirebase(finalSession, sessionDogs, sessionAnno, sessionTeam, sessionRadio);
