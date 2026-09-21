@@ -61,6 +61,8 @@ interface MapContainerProps {
   mapFocusTarget?: { lat: number; lng: number } | null;
   /** The local hunter's nickname, so their own team entry is not drawn on their own map. */
   myNickname?: string;
+  /** Dogs the hunter has hidden from their own map. Personal and per hunt. */
+  hiddenDogIds?: string[];
 }
 
 export const MapContainer: React.FC<MapContainerProps> = ({
@@ -88,6 +90,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   isGpsTracking = false,
   mapFocusTarget,
   myNickname,
+  hiddenDogIds = [],
 }) => {
   const { language } = useLanguage();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -226,7 +229,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       if (dogs && dogs.length > 0 && mapRef.current) {
         const bounds = L.latLngBounds([]);
         dogs.forEach((d) => {
-          if (d.isActive) extendBoundsSafely(bounds, d.lat, d.lng);
+          if (d.isActive && !hiddenDogIds.includes(d.id)) extendBoundsSafely(bounds, d.lat, d.lng);
         });
         if (bounds.isValid()) {
           mapRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
@@ -516,6 +519,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
     dogs.forEach((dog) => {
       if (dog.isActive === false) return;
+      // Hidden by the hunter: skip early, so the marker and track are cleaned up and
+      // the dog stays out of everything drawn. Its polling and history continue.
+      if (hiddenDogIds.includes(dog.id)) return;
       if (
         typeof dog.lat !== 'number' ||
         typeof dog.lng !== 'number' ||
@@ -881,7 +887,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     // Draw vector line to tracked dog if selectedDogId (or first active dog) is set
     const trackedDog = selectedDogId
       ? dogs.find((d) => d.id === selectedDogId && d.isActive)
-      : dogs.find((d) => d.isActive) || dogs[0];
+      : dogs.find((d) => d.isActive && !hiddenDogIds.includes(d.id)) ||
+        dogs.find((d) => !hiddenDogIds.includes(d.id)) ||
+        dogs[0];
 
     // Direction to the tracked dog: a short arrow at the hunter's own position, rotated to
     // point at the dog. It replaces the straight line that used to connect the two, which
@@ -1177,7 +1185,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     const trackedHunter = selectedHunterId ? team.find((h) => h.id === selectedHunterId) : null;
     const trackedDog = selectedDogId
       ? dogs.find((d) => d.id === selectedDogId && d.isActive)
-      : dogs.find((d) => d.isActive) || dogs[0];
+      : dogs.find((d) => d.isActive && !hiddenDogIds.includes(d.id)) ||
+        dogs.find((d) => !hiddenDogIds.includes(d.id)) ||
+        dogs[0];
 
     const target = trackedHunter
       ? { lat: trackedHunter.lat, lng: trackedHunter.lng, name: trackedHunter.name }
@@ -1206,7 +1216,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
     // Dogs
     dogs.forEach((d) => {
-      if (d.isActive) extendBoundsSafely(bounds, d.lat, d.lng);
+      if (d.isActive && !hiddenDogIds.includes(d.id)) extendBoundsSafely(bounds, d.lat, d.lng);
     });
 
     // Team
@@ -1465,7 +1475,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         const trackedHunter = selectedHunterId ? team.find((h) => h.id === selectedHunterId) : null;
         const trackedDog = selectedDogId
           ? dogs.find((d) => d.id === selectedDogId && d.isActive)
-          : dogs.find((d) => d.isActive) || dogs[0];
+          : dogs.find((d) => d.isActive && !hiddenDogIds.includes(d.id)) ||
+            dogs.find((d) => !hiddenDogIds.includes(d.id)) ||
+            dogs[0];
 
         // Calculate telemetry for bottom bar
         let dist: number | null = null;

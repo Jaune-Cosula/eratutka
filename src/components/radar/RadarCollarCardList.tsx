@@ -12,6 +12,9 @@ interface RadarCollarCardListProps {
   isDarkMode: boolean;
   onAddDog: () => void;
   onDeleteDog?: (dogId: string) => void;
+  /** Dogs this hunter has hidden from their own map. Personal and per hunt. */
+  hiddenDogIds?: string[];
+  onToggleDogVisibility?: (dogId: string) => void;
 }
 
 export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
@@ -22,6 +25,8 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
   isDarkMode,
   onAddDog,
   onDeleteDog,
+  hiddenDogIds = [],
+  onToggleDogVisibility,
 }) => {
   const sortedDogs = useMemo(() => {
     if (!selectedDogId) return dogs;
@@ -36,6 +41,11 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
     <div className="lg:col-span-1 space-y-3">
       <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 px-1">
         Kytketyt pannat ({dogs.length})
+        {hiddenDogIds.length > 0 && (
+          <span className="normal-case font-semibold text-stone-500">
+            {' '}• {hiddenDogIds.length} piilotettu
+          </span>
+        )}
       </h3>
 
       {dogs.length === 0 ? (
@@ -79,11 +89,15 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
             dog.notes?.toLowerCase().includes('kissa')
           );
 
+          const isHidden = hiddenDogIds.includes(dog.id);
+
           return (
             <div
               key={dog.id}
               onClick={() => setSelectedDogId(dog.id)}
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
+                isHidden ? 'opacity-60' : ''
+              } ${
                 isSelected
                   ? isDarkMode
                     ? 'bg-stone-800 border-amber-500/80 ring-2 ring-amber-500/30 shadow-xl'
@@ -213,6 +227,26 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                     <span>Paikkatieto: <strong className="text-emerald-300 font-bold">{formatTimeAgo(dog.lastUpdated)}</strong></span>
                   </span>
                 </div>
+
+                {/* Visibility toggle. Purely personal and per hunt: it only controls what is
+                    drawn on this hunter's own map, never what the rest of the party sees, and
+                    the collar keeps being polled and its track recorded while hidden. */}
+                {onToggleDogVisibility && (
+                  <label
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-2 pt-2 border-t border-stone-700/40 flex items-center space-x-2 text-xs font-bold cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!isHidden}
+                      onChange={() => onToggleDogVisibility(dog.id)}
+                      className="w-4 h-4 rounded accent-amber-500 cursor-pointer shrink-0"
+                    />
+                    <span className={isHidden ? 'text-stone-500' : 'text-emerald-400'}>
+                      {isHidden ? 'Piilotettu kartalta' : 'Näytä kartalla'}
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
           );

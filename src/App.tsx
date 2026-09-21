@@ -275,6 +275,48 @@ export default function App() {
   const [activeRulerPoint, setActiveRulerPoint] = useState<{ lat: number; lng: number; title: string } | null>(null);
   const [mapFocusTarget, setMapFocusTarget] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Dogs hidden from this hunter's own map. Deliberately personal and per hunt: the choice
+  // never syncs to the party (another hunter may be relying on seeing that collar), and a
+  // new hunt starts with every dog visible again. Hiding only affects drawing - the collar
+  // is still polled and its track still recorded, so nothing is lost.
+  const hiddenDogsStorageKey = `eratutka_hidden_dogs_${currentSession?.code || 'DEFAULT'}`;
+  const [hiddenDogIds, setHiddenDogIds] = useState<string[]>([]);
+  // Which hunt's stored value has been loaded into the state above. The persist effect must
+  // stay quiet until this matches the active hunt: otherwise it writes the initial empty
+  // list over the stored one before the load takes effect, and the choice is lost on every
+  // reload. (React's StrictMode double-invokes effects, which made that wipe reliable.)
+  const [hiddenLoadedKey, setHiddenLoadedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let parsed: string[] = [];
+    try {
+      const raw = localStorage.getItem(hiddenDogsStorageKey);
+      const value = raw ? JSON.parse(raw) : [];
+      parsed = Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+    } catch (e) {
+      parsed = [];
+    }
+    setHiddenDogIds(parsed);
+    setHiddenLoadedKey(hiddenDogsStorageKey);
+  }, [hiddenDogsStorageKey]);
+
+  useEffect(() => {
+    if (hiddenLoadedKey !== hiddenDogsStorageKey) return;
+    try {
+      localStorage.setItem(hiddenDogsStorageKey, JSON.stringify(hiddenDogIds));
+    } catch (e) {}
+  }, [hiddenDogIds, hiddenDogsStorageKey, hiddenLoadedKey]);
+
+  const handleToggleDogVisibility = (dogId: string) => {
+    setHiddenDogIds((prev) =>
+      prev.includes(dogId) ? prev.filter((id) => id !== dogId) : [...prev, dogId]
+    );
+  };
+
+  // Everything the hunter can actually see: used for the map, for the badge count, and for
+  // picking a default dog to track.
+  const visibleDogs = dogs.filter((d) => !hiddenDogIds.includes(d.id));
+
   // Modals State
   const [showSosModal, setShowSosModal] = useState<boolean>(false);
   const [showAddDogModal, setShowAddDogModal] = useState<boolean>(false);
@@ -922,7 +964,7 @@ export default function App() {
         onImportMapData={() => setShowImportMapDataModal(true)}
         onAddDog={() => setShowAddDogModal(true)}
         onAddAnnotation={() => setShowAddAnnotationModal(true)}
-        activeDogCount={dogs.filter((d) => d.isActive).length}
+        activeDogCount={visibleDogs.filter((d) => d.isActive).length}
         teamCount={team.length}
         unreadRadioCount={unreadRadioCount}
         session={currentSession}
@@ -940,6 +982,7 @@ export default function App() {
             mapLayer={mapLayer}
             setMapLayer={setMapLayer}
             dogs={dogs}
+            hiddenDogIds={hiddenDogIds}
             selectedDogId={selectedDogId}
             setSelectedDogId={setSelectedDogId}
             team={team}
@@ -967,6 +1010,8 @@ export default function App() {
         {activeTab === 'radar' && (
           <DogRadarPanel
             dogs={dogs}
+            hiddenDogIds={hiddenDogIds}
+            onToggleDogVisibility={handleToggleDogVisibility}
             selectedDogId={selectedDogId}
             setSelectedDogId={setSelectedDogId}
             team={team}
@@ -1151,7 +1196,7 @@ export default function App() {
       <MobileBottomNav
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        activeDogCount={dogs.filter((d) => d.isActive).length}
+        activeDogCount={visibleDogs.filter((d) => d.isActive).length}
         teamCount={team.length}
         unreadRadioCount={unreadRadioCount}
         isDarkMode={isDarkMode}

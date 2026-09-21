@@ -49,6 +49,9 @@ interface DogRadarPanelProps {
   userLocation: UserLocation | null;
   isDarkMode: boolean;
   onAddDog: () => void;
+  /** Dogs this hunter has hidden from their own map. Personal and per hunt. */
+  hiddenDogIds?: string[];
+  onToggleDogVisibility?: (dogId: string) => void;
   onToggleDogAlert: (dogId: string, alertType: 'bark' | 'stand') => void;
   onUpdateDogTelemetry?: (dogId: string, updates: Partial<Dog>) => void;
   onDeleteDog?: (dogId: string) => void;
@@ -67,6 +70,8 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
   userLocation,
   isDarkMode,
   onAddDog,
+  hiddenDogIds,
+  onToggleDogVisibility,
   onToggleDogAlert,
   onUpdateDogTelemetry,
   onDeleteDog,
@@ -268,6 +273,8 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
             isDarkMode={isDarkMode}
             onAddDog={onAddDog}
             onDeleteDog={onDeleteDog}
+            hiddenDogIds={hiddenDogIds}
+            onToggleDogVisibility={onToggleDogVisibility}
           />
 
           {/* Right Selected Dog Detailed Telemetry Radar view */}
