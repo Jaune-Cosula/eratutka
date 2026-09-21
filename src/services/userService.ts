@@ -603,6 +603,34 @@ const lastSessionWriteTime: Record<string, number> = {};
 const WRITE_THROTTLE_MS = 30000; // Cloud write at most once every 30 seconds for active hunt telemetry
 const BURST_WRITE_THROTTLE_MS = 3000; // Minimum 3s interval between forceImmediate writes to prevent quota exhaustion on rapid clicks
 
+/**
+ * Returns a copy of the payload with every `undefined` value removed, at any depth.
+ *
+ * Firestore rejects an explicit `undefined` anywhere in a write and rejects the *whole*
+ * document with it, so one unset field is enough to freeze the cloud copy of a hunt
+ * indefinitely while the relay keeps working - the hunters see live data and never learn
+ * that anyone joining by code, or reading the cloud copy, gets a stale pack.
+ *
+ * "Not set" is expressed as `key: undefined` throughout the client model (the dog and
+ * annotation builders, and `mergeDogLists`, which merges two absent values into an
+ * explicit `undefined`). Dropping those keys here is the same thing Firestore's own
+ * `ignoreUndefinedProperties` does, kept at the write boundary so it covers every
+ * producer, including ones added later.
+ */
+const stripUndefinedDeep = <T,>(value: T): T => {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const clean: Record<string, unknown> = {};
+    for (const [field, fieldValue] of Object.entries(value)) {
+      if (fieldValue !== undefined) clean[field] = stripUndefinedDeep(fieldValue);
+    }
+    return clean as T;
+  }
+  return value;
+};
+
 export const saveSessionPartial = async (
   sessionCode: string,
   partialData: {
@@ -687,10 +715,10 @@ export const saveSessionPartial = async (
       const sessionRef = doc(db, 'sessions', writeKey);
       await setDoc(
         sessionRef,
-        {
+        stripUndefinedDeep({
           ...dataToWrite,
           updatedAt: Date.now(),
-        },
+        }),
         { merge: true }
       );
     } catch (err) {
