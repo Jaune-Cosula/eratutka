@@ -455,6 +455,12 @@ export function useDogTracker({
   const handleAddDog = (newDog: Dog) => {
     // If this dog ID was previously marked deleted, unmark it
     clearDogFromDeleted(newDog, newDog.id, newDog.collarId, newDog.directGpsId, newDog.imei, newDog.tractiveTrackerId);
+    // ...and retract the deletion in the outgoing queue too. A delete that was never
+    // acknowledged (offline, server restarting, a rejected request) stays queued and is
+    // flushed on the next write - which happens moments after this add. Without retracting it
+    // here, adding a collar back would queue its own deletion and the collar would vanish
+    // again a couple of seconds later, every time.
+    clearPendingDeletedIds(getDogIdentifiers(newDog));
 
     const dogToAdd: Dog = {
       ...newDog,

@@ -38,6 +38,8 @@ import {
   markDogAsDeleted,
   isDogDeleted,
   getDogIdentifiers,
+  clearDogFromDeleted,
+  clearPendingDeletedIds,
 } from './utils/geoUtils';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -689,7 +691,15 @@ export default function App() {
 
     let updatedDogs = dogsRef.current;
     if (importedDogs.length > 0) {
-      importedDogs.forEach((dog) => rememberMyDog(dog.id));
+      importedDogs.forEach((dog) => {
+        rememberMyDog(dog.id);
+        // Importing a collar is the same intent as adding one, so it has to retract an earlier
+        // deletion of that collar as well: otherwise `isDogDeleted` keeps filtering it out and
+        // the imported collar never appears, and a still-queued deletion would remove it from
+        // the server moments later.
+        clearDogFromDeleted(dog);
+        clearPendingDeletedIds(getDogIdentifiers(dog));
+      });
       updatedDogs = [...dogsRef.current, ...importedDogs];
       dogsRef.current = updatedDogs;
       setDogs(updatedDogs);
