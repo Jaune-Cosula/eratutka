@@ -483,7 +483,12 @@ export function useDogTracker({
     }
   };
 
-  const handleDeleteDog = (dogId: string) => {
+  /**
+   * Removes a dog from the hunt. By default it is also removed from the user's saved
+   * collars - with `keepSaved` it only leaves the hunt ("Ota pois jaosta"), so the
+   * collar stays available in the library instead of having to be re-entered.
+   */
+  const handleDeleteDog = (dogId: string, options: { keepSaved?: boolean } = {}) => {
     const dogToDelete =
       dogsRef.current.find((d) => d.id === dogId) || dogs.find((d) => d.id === dogId);
 
@@ -539,7 +544,7 @@ export function useDogTracker({
         }
       }
 
-      if (currentUser?.uid) {
+      if (currentUser?.uid && !options.keepSaved) {
         const userSavedKey = `eratutka_saved_dogs_${currentUser.uid}`;
         const raw = localStorage.getItem(userSavedKey);
         if (raw) {
@@ -552,8 +557,9 @@ export function useDogTracker({
       }
     } catch (e) {}
 
-    // 4. Remove from Firebase user account collection for all IDs
-    if (currentUser?.uid) {
+    // 4. Remove from Firebase user account collection for all IDs. Skipped when the dog
+    //    is only being taken out of this hunt: the saved collar is the library entry.
+    if (currentUser?.uid && !options.keepSaved) {
       removeDogFromUserFirebase(currentUser.uid, dogToDelete || dogId, idsToMark);
     }
 

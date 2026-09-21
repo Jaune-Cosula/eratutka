@@ -15,6 +15,12 @@ interface RadarCollarCardListProps {
   /** Dogs this hunter has hidden from their own map. Personal and per hunt. */
   hiddenDogIds?: string[];
   onToggleDogVisibility?: (dogId: string) => void;
+  /** Collars this device manages, so "take out of the hunt" is offered only for those. */
+  isMyDog?: (dog: Dog) => boolean;
+  onUnshareDog?: (dogId: string) => void;
+  /** This hunter's own collars that are deliberately not in the hunt at all. */
+  libraryDogs?: Dog[];
+  onShareLibraryDog?: (dog: Dog) => void;
 }
 
 export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
@@ -27,6 +33,10 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
   onDeleteDog,
   hiddenDogIds = [],
   onToggleDogVisibility,
+  isMyDog,
+  onUnshareDog,
+  libraryDogs = [],
+  onShareLibraryDog,
 }) => {
   const sortedDogs = useMemo(() => {
     if (!selectedDogId) return dogs;
@@ -228,6 +238,26 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                   </span>
                 </div>
 
+                {/* Sharing: whether this collar is part of the hunt the party sees. Unchecking
+                    moves it to the hunter's own library, out of the session entirely, so
+                    nothing about it is transmitted any more. Offered only for the collars
+                    this device manages - another hunter's collar is theirs to take out. */}
+                {onUnshareDog && isMyDog?.(dog) && (
+                  <label
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-2 pt-2 border-t border-stone-700/40 flex items-center space-x-2 text-xs font-bold cursor-pointer select-none"
+                    title="Poistamalla ruksin panta siirtyy omaan kirjastoon eikä ole enää jaossa."
+                  >
+                    <input
+                      type="checkbox"
+                      checked
+                      onChange={() => onUnshareDog(dog.id)}
+                      className="w-4 h-4 rounded accent-amber-500 cursor-pointer shrink-0"
+                    />
+                    <span className="text-amber-300">Jaa jahdissa</span>
+                  </label>
+                )}
+
                 {/* Visibility toggle. Purely personal and per hunt: it only controls what is
                     drawn on this hunter's own map, never what the rest of the party sees, and
                     the collar keeps being polled and its track recorded while hidden. */}
@@ -251,6 +281,57 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
             </div>
           );
         })
+      )}
+
+      {/* Collar library: this hunter's own collars that are deliberately not in this hunt.
+          They are not part of the session, so nothing about them is transmitted and the
+          party cannot see them in any form - which is what keeps a collar that stayed at
+          home off everyone else's map. Sharing one moves it back into the hunt. */}
+      {libraryDogs.length > 0 && onShareLibraryDog && (
+        <div className="pt-3 space-y-3 border-t border-stone-700/40">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 px-1">
+              Oma kirjasto ({libraryDogs.length})
+            </h3>
+            <p className="text-[11px] text-stone-500 px-1 mt-1 leading-snug">
+              Ei jaossa. Pannat eivät ole tässä jahdissa eikä niitä lähetetä kenellekään.
+            </p>
+          </div>
+
+          {libraryDogs.map((dog) => (
+            <div
+              key={dog.id}
+              className={`p-3.5 rounded-2xl border ${
+                isDarkMode ? 'bg-stone-800/20 border-stone-800' : 'bg-stone-100 border-stone-200'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md border shrink-0 opacity-70"
+                  style={{ backgroundColor: dog.color }}
+                >
+                  🐕
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-extrabold text-base truncate">{dog.name}</h4>
+                  <p className="text-xs text-stone-400 truncate">
+                    {dog.trackerModel || dog.collarId}
+                  </p>
+                </div>
+              </div>
+
+              <label className="mt-2 pt-2 border-t border-stone-700/40 flex items-center space-x-2 text-xs font-bold cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={false}
+                  onChange={() => onShareLibraryDog(dog)}
+                  className="w-4 h-4 rounded accent-amber-500 cursor-pointer shrink-0"
+                />
+                <span className="text-stone-400">Jaa jahdissa</span>
+              </label>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

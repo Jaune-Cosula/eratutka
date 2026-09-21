@@ -28,10 +28,16 @@ import { ShareSessionModal } from './components/ShareSessionModal';
 import { useUserLocation } from './hooks/useUserLocation';
 import { useDogTracker } from './hooks/useDogTracker';
 import {
+  readDogLibrary,
+  writeDogLibrary,
+  mergeIntoDogLibrary,
+} from './services/dogLibrary';
+import {
   generateGpx,
   mergeDogLists,
   markDogAsDeleted,
   isDogDeleted,
+  getDogIdentifiers,
 } from './utils/geoUtils';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -316,6 +322,68 @@ export default function App() {
   // Everything the hunter can actually see: used for the map, for the badge count, and for
   // picking a default dog to track.
   const visibleDogs = dogs.filter((d) => !hiddenDogIds.includes(d.id));
+
+  // Collar library: the hunter's own dogs that are NOT in the current hunt. They are
+  // deliberately not part of the session, so nothing about them is transmitted and nobody
+  // else can see them - which is what keeps collars that stayed home from being broadcast.
+  // Read lazily in the initialiser so the stored value is in place before any effect runs
+  // and could overwrite it with the empty default.
+  const [dogLibrary, setDogLibrary] = useState<Dog[]>(() => readDogLibrary());
+
+  useEffect(() => {
+    writeDogLibrary(dogLibrary);
+  }, [dogLibrary]);
+
+  // Ids of collars added from this device, so "take out of the hunt" is offered only for
+  // dogs the hunter actually manages here.
+  const myDogIdsStorageKey = 'eratutka_my_dogs';
+  const [myDogIds, setMyDogIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(myDogIdsStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(myDogIdsStorageKey, JSON.stringify(myDogIds));
+    } catch (e) {}
+  }, [myDogIds]);
+
+  const rememberMyDog = (dogId: string) => {
+    if (!dogId) return;
+    setMyDogIds((prev) => (prev.includes(dogId) ? prev : [...prev, dogId]));
+  };
+
+  const isMyDog = (dog: Dog) => Boolean(dog && myDogIds.includes(dog.id));
+
+  /** Adds a dog to the hunt and remembers that this device manages it. */
+  const handleAddDogTracked = (dog: Dog) => {
+    rememberMyDog(dog.id);
+    handleAddDog(dog);
+  };
+
+  /** Moves a library collar into the current hunt, so the party can see it. */
+  const handleShareLibraryDog = (dog: Dog) => {
+    setDogLibrary((prev) => prev.filter((d) => d.id !== dog.id));
+    handleAddDogTracked(dog);
+  };
+
+  /**
+   * Takes a collar out of the hunt and keeps it in the library. Nothing about it is
+   * transmitted afterwards, and its settings are preserved, so it can be shared again
+   * without re-entering the collar id.
+   */
+  const handleUnshareDog = (dogId: string) => {
+    const dog = dogsRef.current.find((d) => d.id === dogId);
+    if (dog) {
+      setDogLibrary((prev) => mergeIntoDogLibrary(prev, [dog]));
+    }
+    handleDeleteDog(dogId, { keepSaved: true });
+  };
 
   // Modals State
   const [showSosModal, setShowSosModal] = useState<boolean>(false);
@@ -621,6 +689,7 @@ export default function App() {
 
     let updatedDogs = dogsRef.current;
     if (importedDogs.length > 0) {
+      importedDogs.forEach((dog) => rememberMyDog(dog.id));
       updatedDogs = [...dogsRef.current, ...importedDogs];
       dogsRef.current = updatedDogs;
       setDogs(updatedDogs);
@@ -801,10 +870,27 @@ export default function App() {
       }
     }
 
-    // Never replace the list with an empty/partial one: union the session's dogs
-    // with the dogs already on this device. mergeDogLists also filters every
-    // deleted identifier (id, collarId, imei, directGpsId, tractive), not just id.
-    sessionDogs = mergeDogLists(dogsRef.current, sessionDogs);
+    // The session list is relayed to the whole party, so a collar must never enter it just
+    // because it happens to sit on this device. Collars the hunt does not already know
+    // about are this device's own: they move to the collar library, where they are kept and
+    // one click shares them. A collar the hunt does know about (this hunter shared it here
+    // earlier) stays in the hunt and keeps its local track history and settings.
+    //
+    // This is also what makes "Puhdas jahtipohja" work: the creator passes no initial dogs,
+    // so every collar on the device lands in the library instead of the old behaviour,
+    // where mergeDogLists unioned the whole device list back in and the hunt was not clean.
+    const huntIdentifiers = new Set(sessionDogs.flatMap((d) => getDogIdentifiers(d)));
+    const belongsToHunt = (dog: Dog) =>
+      getDogIdentifiers(dog).some((id) => huntIdentifiers.has(id));
+
+    const carriedOver = dogsRef.current.filter((d) => !belongsToHunt(d));
+    if (carriedOver.length > 0) {
+      setDogLibrary((prev) => mergeIntoDogLibrary(prev, carriedOver));
+    }
+
+    // mergeDogLists also filters every deleted identifier (id, collarId, imei,
+    // directGpsId, tractive), not just id.
+    sessionDogs = mergeDogLists(dogsRef.current.filter(belongsToHunt), sessionDogs);
 
     setDogs(sessionDogs);
     dogsRef.current = sessionDogs;
@@ -1012,6 +1098,10 @@ export default function App() {
             dogs={dogs}
             hiddenDogIds={hiddenDogIds}
             onToggleDogVisibility={handleToggleDogVisibility}
+            isMyDog={isMyDog}
+            onUnshareDog={handleUnshareDog}
+            libraryDogs={dogLibrary}
+            onShareLibraryDog={handleShareLibraryDog}
             selectedDogId={selectedDogId}
             setSelectedDogId={setSelectedDogId}
             team={team}
@@ -1109,7 +1199,7 @@ export default function App() {
 
       {showAddDogModal && (
         <AddDogModal
-          onAddDog={handleAddDog}
+          onAddDog={handleAddDogTracked}
           onClose={() => setShowAddDogModal(false)}
           isDarkMode={isDarkMode}
           userLat={userLocation ? userLocation.lat : INITIAL_CENTER.lat}

@@ -52,6 +52,12 @@ interface DogRadarPanelProps {
   /** Dogs this hunter has hidden from their own map. Personal and per hunt. */
   hiddenDogIds?: string[];
   onToggleDogVisibility?: (dogId: string) => void;
+  /** Collars this device manages, so "take out of the hunt" is offered only for those. */
+  isMyDog?: (dog: Dog) => boolean;
+  onUnshareDog?: (dogId: string) => void;
+  /** This hunter's own collars that are deliberately not in the hunt at all. */
+  libraryDogs?: Dog[];
+  onShareLibraryDog?: (dog: Dog) => void;
   onToggleDogAlert: (dogId: string, alertType: 'bark' | 'stand') => void;
   onUpdateDogTelemetry?: (dogId: string, updates: Partial<Dog>) => void;
   onDeleteDog?: (dogId: string) => void;
@@ -72,6 +78,10 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
   onAddDog,
   hiddenDogIds,
   onToggleDogVisibility,
+  isMyDog,
+  onUnshareDog,
+  libraryDogs,
+  onShareLibraryDog,
   onToggleDogAlert,
   onUpdateDogTelemetry,
   onDeleteDog,
@@ -275,6 +285,10 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
             onDeleteDog={onDeleteDog}
             hiddenDogIds={hiddenDogIds}
             onToggleDogVisibility={onToggleDogVisibility}
+            isMyDog={isMyDog}
+            onUnshareDog={onUnshareDog}
+            libraryDogs={libraryDogs}
+            onShareLibraryDog={onShareLibraryDog}
           />
 
           {/* Right Selected Dog Detailed Telemetry Radar view */}
