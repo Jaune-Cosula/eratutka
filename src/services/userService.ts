@@ -134,35 +134,49 @@ async function pushToLiveRelay(
     annotations?: MapAnnotation[];
     members?: TeamMember[];
     radioMessages?: RadioMessage[];
-    deletedDogIds?: string[];
     revivedDogIds?: string[];
   }
-): Promise<boolean> {
+): Promise<void> {
   try {
     const code = sessionCode.toUpperCase().trim();
-    if (!isRemoteSession(code) || !activeHuntKey) return false;
-    // Deletions travel as events. Falling back to the accumulated registry here is what let
-    // any client with a stale copy re-assert an old deletion, so the fallback is empty: only
-    // what the caller explicitly supplies, or what is still unacknowledged, may be sent.
-    const deletedIds = data.deletedDogIds || [];
+    if (!isRemoteSession(code) || !activeHuntKey) return;
     const resp = await fetch(`/api/session/${code}/relay`, {
       method: 'POST',
       headers: relayAuthHeaders(),
       body: JSON.stringify({
         ...data,
         sessionInfo: stripSessionSecrets(data.sessionInfo),
-        deletedDogIds: deletedIds,
         clientId: localClientId,
       }),
     });
-    if (resp.status === 403) {
-      notifySessionAccessDenied();
-      return false;
-    }
-    return resp.ok;
+    if (resp.status === 403) notifySessionAccessDenied();
   } catch (e) {
     // Silent fail if offline / server reloading
-    return false;
+  }
+}
+
+/**
+ * Hands the deletions this device still owes the server to the endpoint that exists for them.
+ *
+ * They are deliberately not part of the relay push: clients used to upload their whole
+ * accumulated registry in that field on every write, so the server could not tell a stale copy
+ * from a fresh deletion. Sending them here keeps each deletion an explicit event, and the
+ * outbox means one made offline is retried until the server accepts it.
+ */
+async function flushPendingDeletions(code: string): Promise<void> {
+  const pending = getPendingDeletedIds();
+  if (pending.length === 0 || !isRemoteSession(code)) return;
+
+  try {
+    const resp = await fetch(`/api/session/${code.toUpperCase().trim()}/dogs/delete`, {
+      method: 'POST',
+      headers: relayAuthHeaders(),
+      body: JSON.stringify({ deletedIds: pending }),
+    });
+    // Only once the server holds them are they forgotten here.
+    if (resp.ok) clearPendingDeletedIds(pending);
+  } catch (e) {
+    // Offline: the outbox keeps them for the next attempt.
   }
 }
 
@@ -446,7 +460,7 @@ export const subscribeToSessionFirebase = (
         (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            applySessionDeletionSignals(data);
+            applySessionDeletionSignals(data, { deletions: false });
             const rawDogs = Array.isArray(data.dogs) ? (data.dogs as Dog[]) : [];
             const safeDogs = rawDogs.filter((d) => !isDogDeleted(d));
 
@@ -482,11 +496,20 @@ export const subscribeToSessionFirebase = (
  * Without the revive half, a collar deleted once could never be added again: this side
  * would keep filtering the dog out of every payload, no matter how often it was re-added.
  */
-const applySessionDeletionSignals = (payload: {
-  deletedDogIds?: unknown;
-  revivedDogIds?: unknown;
-}): void => {
-  const deleted = Array.isArray(payload?.deletedDogIds) ? payload.deletedDogIds : [];
+const applySessionDeletionSignals = (
+  payload: {
+    deletedDogIds?: unknown;
+    revivedDogIds?: unknown;
+  },
+  options: { deletions?: boolean } = {}
+): void => {
+  // Deletions are trusted only from the server's relay answer. Firestore is written by clients,
+  // and an older client version uploads its whole accumulated registry there on every write -
+  // applying that would hide a collar the hunt has already revived, on this hunter's map too.
+  const deleted =
+    options.deletions === false || !Array.isArray(payload?.deletedDogIds)
+      ? []
+      : payload.deletedDogIds;
   const revived = Array.isArray(payload?.revivedDogIds) ? payload.revivedDogIds : [];
 
   if (deleted.length > 0) {
@@ -585,7 +608,7 @@ export const fetchSessionFromFirebase = async (
     const snap = await getDoc(sessionRef);
     if (snap.exists()) {
       const data = snap.data();
-      applySessionDeletionSignals(data);
+      applySessionDeletionSignals(data, { deletions: false });
       const rawDogs = Array.isArray(data.dogs) ? (data.dogs as Dog[]) : [];
       const safeDogs = rawDogs.filter((d) => !isDogDeleted(d));
 
@@ -671,18 +694,12 @@ export const saveSessionPartial = async (
     annotations?: MapAnnotation[];
     members?: TeamMember[];
     radioMessages?: RadioMessage[];
-    deletedDogIds?: string[];
     revivedDogIds?: string[];
   },
   forceImmediate = false
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
   const key = activeHuntKey;
-  // Deletions travel as *events*: only the ids this device still owes the server. Sending the
-  // registry instead let a client that had not yet polled a revival re-assert an old
-  // deletion, and because a deletion beats a revival that undid a collar added back moments
-  // earlier - for the whole party, over and over.
-  const relayDeletedIds = partialData.deletedDogIds || getPendingDeletedIds();
   const safeDogs = partialData.dogs ? partialData.dogs.filter((d) => !isDogDeleted(d)) : undefined;
   // The PIN gates code-based joining and is verified server-side; it must never travel
   // to the relay, to Firestore or into another hunter's client. The key is only added
@@ -728,15 +745,13 @@ export const saveSessionPartial = async (
   // 2. Always push to In-Memory Server Relay immediately (0 Firebase writes, instant sync across all hunters)
   const relayPayload = {
     ...payloadToStore,
-    deletedDogIds: relayDeletedIds,
     ...(revivedIds ? { revivedDogIds: revivedIds } : {}),
   };
-  const relayAccepted = await pushToLiveRelay(code, relayPayload);
-  // Only once the server has them are they forgotten here. Until then every push retries
-  // them, which is what keeps a deletion made offline from being lost.
-  if (relayAccepted && relayDeletedIds.length > 0) {
-    clearPendingDeletedIds(relayDeletedIds);
-  }
+  await pushToLiveRelay(code, relayPayload);
+
+  // Deletions go to the endpoint that exists for them, never in the push above: that field is
+  // uploaded as accumulated state by older clients, which the server now has to refuse.
+  await flushPendingDeletions(code);
 
   // 3. Skip the cloud write when there is no capability key (nothing to write to), when
   //    the Firestore quota is exceeded, or when this client is known to be outdated.

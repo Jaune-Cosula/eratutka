@@ -2186,7 +2186,7 @@ app.post('/api/session/:code/relay', (req, res) => {
       return denySessionAccess(res, 'Varajahtisessiota DEFAULT ei tueta.');
     }
 
-    const { sessionInfo, dogs, annotations, members, radioMessages, clientId, deletedDogIds, revivedDogIds } = req.body;
+    const { sessionInfo, dogs, annotations, members, radioMessages, clientId, revivedDogIds } = req.body;
     const now = Date.now();
 
     let existing = sessionLiveStore.get(code);
@@ -2208,20 +2208,18 @@ app.post('/api/session/:code/relay', (req, res) => {
       existing.deletedDogIds = new Set();
     }
 
-    if (Array.isArray(deletedDogIds)) {
-      for (const raw of deletedDogIds) {
-        const s = String(raw || '').trim();
-        if (!s) continue;
-        markDeletedOnServer(existing.deletedDogIds, s);
-        // A delete supersedes an earlier revive of the same identifier: without this, the
-        // revive would keep being broadcast for its full window and would undo a dog
-        // deleted shortly after being added.
-        if (existing.revivedDogIds) clearRevivedOnServer(existing.revivedDogIds, s);
-        directGpsStore.delete(s);
-        const clean = s.replace(/^ID[:\s]*/i, '').trim();
-        if (clean) directGpsStore.delete(clean);
-      }
-    }
+    // A `deletedDogIds` array in this body is deliberately ignored.
+    //
+    // Clients used to upload their whole accumulated registry here on every write, so a client
+    // that had not yet polled a revival re-asserted a deletion that had already been undone -
+    // and with a deletion beating a revival, the collar died again for the whole party a couple
+    // of seconds after being added. An older client in the field still sends it, which is why
+    // the server must refuse it here rather than trusting the sender to be current.
+    //
+    // Deletions are accepted only by /dogs/delete, where the client states the ids it just
+    // deleted. Every client version calls that endpoint when a collar is removed, so a real
+    // deletion still arrives - including the delete-supersedes-revive rule, which lives there.
+
 
     // A client that just added a dog says so explicitly. Without this the deleted registry
     // is a one-way ratchet: a collar removed once could never be added back, because this
@@ -2378,7 +2376,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.2';
+const ERATUTKA_VERSION = '2.7.3';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {
