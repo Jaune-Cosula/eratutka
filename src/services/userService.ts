@@ -10,7 +10,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Dog, MapAnnotation, HuntSession, TeamMember, RadioMessage } from '../types';
-import { getDeletedDogIds, markDogAsDeleted, clearDogFromDeleted, isDogDeleted } from '../utils/geoUtils';
+import {
+  getDeletedDogIds,
+  markDogAsDeleted,
+  clearDogFromDeleted,
+  isDogDeleted,
+  getPendingDeletedIds,
+  clearPendingDeletedIds,
+} from '../utils/geoUtils';
 
 export interface UserProfile {
   uid: string;
@@ -130,11 +137,14 @@ async function pushToLiveRelay(
     deletedDogIds?: string[];
     revivedDogIds?: string[];
   }
-): Promise<void> {
+): Promise<boolean> {
   try {
     const code = sessionCode.toUpperCase().trim();
-    if (!isRemoteSession(code) || !activeHuntKey) return;
-    const deletedIds = data.deletedDogIds || Array.from(getDeletedDogIds());
+    if (!isRemoteSession(code) || !activeHuntKey) return false;
+    // Deletions travel as events. Falling back to the accumulated registry here is what let
+    // any client with a stale copy re-assert an old deletion, so the fallback is empty: only
+    // what the caller explicitly supplies, or what is still unacknowledged, may be sent.
+    const deletedIds = data.deletedDogIds || [];
     const resp = await fetch(`/api/session/${code}/relay`, {
       method: 'POST',
       headers: relayAuthHeaders(),
@@ -145,9 +155,14 @@ async function pushToLiveRelay(
         clientId: localClientId,
       }),
     });
-    if (resp.status === 403) notifySessionAccessDenied();
+    if (resp.status === 403) {
+      notifySessionAccessDenied();
+      return false;
+    }
+    return resp.ok;
   } catch (e) {
     // Silent fail if offline / server reloading
+    return false;
   }
 }
 
@@ -646,7 +661,14 @@ export const saveSessionPartial = async (
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
   const key = activeHuntKey;
-  const deletedIds = partialData.deletedDogIds || Array.from(getDeletedDogIds());
+  // Firestore and the local session blob hold the registry as *state*: a hunter who joins or
+  // recovers reads it to learn which collars the hunt has deleted.
+  const deletedIds = Array.from(getDeletedDogIds());
+  // The relay carries deletions as *events*: only the ids this device still owes the server.
+  // Sending the registry here instead let a client that had not yet polled a revival
+  // re-assert an old deletion, and because a deletion beats a revival that undid a collar
+  // added back moments earlier - for the whole party, over and over.
+  const relayDeletedIds = partialData.deletedDogIds || getPendingDeletedIds();
   const safeDogs = partialData.dogs ? partialData.dogs.filter((d) => !isDogDeleted(d)) : undefined;
   // The PIN gates code-based joining and is verified server-side; it must never travel
   // to the relay, to Firestore or into another hunter's client. The key is only added
@@ -683,7 +705,17 @@ export const saveSessionPartial = async (
   } catch {}
 
   // 2. Always push to In-Memory Server Relay immediately (0 Firebase writes, instant sync across all hunters)
-  pushToLiveRelay(code, revivedIds ? { ...payloadToStore, revivedDogIds: revivedIds } : payloadToStore);
+  const relayPayload = {
+    ...payloadToStore,
+    deletedDogIds: relayDeletedIds,
+    ...(revivedIds ? { revivedDogIds: revivedIds } : {}),
+  };
+  const relayAccepted = await pushToLiveRelay(code, relayPayload);
+  // Only once the server has them are they forgotten here. Until then every push retries
+  // them, which is what keeps a deletion made offline from being lost.
+  if (relayAccepted && relayDeletedIds.length > 0) {
+    clearPendingDeletedIds(relayDeletedIds);
+  }
 
   // 3. Skip the cloud write when there is no capability key (nothing to write to), when
   //    the Firestore quota is exceeded, or when this client is known to be outdated.
@@ -784,7 +816,10 @@ export const saveSessionDogs = async (
     sessionCode,
     {
       dogs: safeDogs,
-      deletedDogIds: Array.from(getDeletedDogIds()),
+      // No deletedDogIds: the deletion this call may be following is already in the pending
+      // list, and `saveSessionPartial` sends that. Listing the whole registry here is what
+      // let a stale client re-assert an old deletion the server had already been told to
+      // forget.
       ...(revivedDogIds && revivedDogIds.length > 0 ? { revivedDogIds } : {}),
     },
     forceImmediate

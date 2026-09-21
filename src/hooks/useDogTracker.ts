@@ -8,6 +8,8 @@ import {
   markDogAsDeleted,
   clearDogFromDeleted,
   isDogDeleted,
+  addPendingDeletedIds,
+  clearPendingDeletedIds,
 } from '../utils/geoUtils';
 import { playBarkSpikeAlert } from '../utils/audioAlerts';
 import { saveSessionDogs, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders } from '../services/userService';
@@ -502,6 +504,10 @@ export function useDogTracker({
       dogToDelete?.tractiveShareUrl,
     ].filter(Boolean) as string[];
     markDogAsDeleted(dogToDelete, dogId, ...idsToMark);
+    // The deletion has to reach the server as an event. Remembering it here means it is
+    // still sent after a reload or a spell offline, instead of being retried as part of the
+    // ever-growing registry that other clients also upload.
+    addPendingDeletedIds(idsToMark);
 
     // 2. Filter local state and active selection
     const updatedList = dogsRef.current.filter((d) => {
@@ -574,7 +580,12 @@ export function useDogTracker({
         method: 'POST',
         headers: relayAuthHeaders(),
         body: JSON.stringify({ dogId, deletedIds: idsToMark }),
-      }).catch(() => {});
+      })
+        .then((resp) => {
+          // The server holds the deletion now, so stop retrying it on every later push.
+          if (resp.ok) clearPendingDeletedIds(idsToMark);
+        })
+        .catch(() => {});
 
       // 6. Force an immediate cloud write so the deletion propagates to the whole party
       saveSessionDogs(codeToBroadcast, updatedList, true);

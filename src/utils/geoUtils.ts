@@ -530,6 +530,80 @@ export function clearDogFromDeleted(...items: (Dog | string | undefined | null)[
   } catch {}
 }
 
+const PENDING_DELETIONS_STORAGE_KEY = 'eratutka_pending_deletions';
+
+/**
+ * Deletions this device has made but not yet handed to the server.
+ *
+ * A deletion has to reach the server as an *event*, not as accumulated state. The registry
+ * above only ever grows and every client in the hunt holds its own copy, so re-uploading it
+ * wholesale meant a client that had not yet polled a revival would re-assert an old deletion
+ * on its next routine write. Because a deletion beats a revival, that silently undid a collar
+ * that had just been added back - for the whole party, a couple of seconds later, over and
+ * over. Sending only the ids still waiting for acknowledgement leaves a stale registry with
+ * nothing to re-assert.
+ *
+ * The list survives a reload and a stay offline: whatever is in it is retried on the next
+ * push that the server accepts.
+ */
+export function getPendingDeletedIds(): string[] {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem(PENDING_DELETIONS_STORAGE_KEY)
+        : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function writePendingDeletedIds(ids: string[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PENDING_DELETIONS_STORAGE_KEY, JSON.stringify(ids.slice(-200)));
+    }
+  } catch {}
+}
+
+/** Remembers that these identifiers were deleted and still have to reach the server. */
+export function addPendingDeletedIds(ids: (string | undefined | null)[]): void {
+  const current = getPendingDeletedIds();
+  const seen = new Set(current);
+  let changed = false;
+
+  for (const id of ids || []) {
+    const s = String(id ?? '').trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    current.push(s);
+    changed = true;
+  }
+
+  if (changed) writePendingDeletedIds(current);
+}
+
+/**
+ * Forgets pending deletions the server has accepted. With no argument the whole list is
+ * dropped; otherwise only the given identifiers are removed.
+ */
+export function clearPendingDeletedIds(ids?: (string | undefined | null)[]): void {
+  if (!ids) {
+    writePendingDeletedIds([]);
+    return;
+  }
+
+  const removing = new Set(
+    ids.map((id) => String(id ?? '').trim()).filter(Boolean)
+  );
+  if (removing.size === 0) return;
+
+  writePendingDeletedIds(getPendingDeletedIds().filter((id) => !removing.has(id)));
+}
+
 /**
  * Checks if a dog ID or Dog object has been marked as deleted.
  */
