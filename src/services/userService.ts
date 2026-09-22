@@ -749,15 +749,20 @@ export const saveSessionPartial = async (
   } catch {}
 
   // 2. Always push to In-Memory Server Relay immediately (0 Firebase writes, instant sync across all hunters)
+  //
+  // Deliberately not awaited. The caller is often a flow that must finish on its own - creating
+  // a hunt opens the map with this very call - and blocking it on a network round trip made the
+  // whole flow stall whenever the relay was slow, with no error to show for it. Both calls send
+  // what they need on their own and report nothing back that the caller acts on.
   const relayPayload = {
     ...payloadToStore,
     ...(revivedIds ? { revivedDogIds: revivedIds } : {}),
   };
-  await pushToLiveRelay(code, relayPayload);
+  pushToLiveRelay(code, relayPayload);
 
   // Deletions go to the endpoint that exists for them, never in the push above: that field is
   // uploaded as accumulated state by older clients, which the server now has to refuse.
-  await flushPendingDeletions(code);
+  flushPendingDeletions(code);
 
   // 3. Skip the cloud write when there is no capability key (nothing to write to), when
   //    the Firestore quota is exceeded, when this client is known to be outdated, or when the
@@ -778,6 +783,17 @@ export const saveSessionPartial = async (
     ...payloadToStore,
   };
 
+  /**
+   * The cloud copy is a best-effort mirror, never something the caller waits for.
+   *
+   * It used to be awaited, and that made the whole app depend on Firestore being healthy:
+   * when the write quota ran out the SDK kept retrying with a growing backoff, the promise did
+   * not settle, and every flow that reached here stopped dead. Creating a hunt was the worst
+   * case - it saves the session before opening the map, so the hunt was created on the server
+   * and then nothing happened, with no error to show. The device's own storage and the relay
+   * have already been written by this point, so nothing is lost by letting this finish on its
+   * own; it reports failure through handleFirestoreError.
+   */
   const executeCloudWrite = async () => {
     const dataToWrite = sessionPendingData[code];
     if (!dataToWrite) return;
@@ -812,7 +828,7 @@ export const saveSessionPartial = async (
         clearTimeout(sessionWriteTimeouts[code]);
         delete sessionWriteTimeouts[code];
       }
-      await executeCloudWrite();
+      executeCloudWrite();
     } else {
       // Rapid click burst protection: batch rapid user actions within 1-3 seconds into a single cloud write
       if (!sessionWriteTimeouts[code]) {
@@ -828,7 +844,7 @@ export const saveSessionPartial = async (
       clearTimeout(sessionWriteTimeouts[code]);
       delete sessionWriteTimeouts[code];
     }
-    await executeCloudWrite();
+    executeCloudWrite();
   } else {
     // Schedule throttled write for background telemetry
     if (!sessionWriteTimeouts[code]) {
