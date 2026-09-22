@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
               ERÄTUTKA
             </h1>
             <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold hidden md:inline-block">
-              v2.7.6
+              v2.7.7
             </span>
           </div>
 
