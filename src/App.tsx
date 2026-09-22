@@ -124,14 +124,42 @@ export default function App() {
           setUserProfile(defaultProfile);
         }
 
-        // Restore User's Saved Dogs from Cloud Firestore
+        // Restore the hunter's saved collars from Firestore. Two things must not happen here.
+        //
+        // A collar that sits in the library must stay out of the hunt: that is the library's
+        // whole promise, and a collar in the hunt list is also relayed to the party. The cloud
+        // copy knows nothing about the library (unsharing deliberately keeps the saved collar),
+        // so the library is consulted before anything is restored.
+        //
+        // And a collar the hunter owns is not a deleted collar, so a deletion still recorded
+        // for it has to be retracted. A leftover marker hid a collar no matter how often it was
+        // added back, because this restore path merged the dog into the list while the marker
+        // filtered it straight out again. handleAddDog is the path that retracts the marker, and
+        // it also sends the revival, so the collar returns for the whole party rather than only
+        // on this device.
         const cloudDogs = await fetchUserDogsFromFirebase(user.uid);
         if (cloudDogs && cloudDogs.length > 0) {
-          setDogs((prev) => {
-            const merged = mergeDogLists(prev, cloudDogs);
-            dogsRef.current = merged;
-            return merged;
-          });
+          const libraryIdentifiers = new Set(
+            readDogLibrary().flatMap((dog) => getDogIdentifiers(dog))
+          );
+          const sitsInLibrary = (dog: Dog) =>
+            getDogIdentifiers(dog).some((id) => libraryIdentifiers.has(id));
+
+          const restored = cloudDogs.filter((dog) => !sitsInLibrary(dog));
+          const hiddenByDeletion = restored.filter((dog) => isDogDeleted(dog));
+          const fresh = restored.filter((dog) => !isDogDeleted(dog));
+
+          hiddenByDeletion.forEach((dog) => handleAddDogRef.current(dog));
+
+          // Merging rather than adding keeps the freshest telemetry: the cloud copy may be
+          // older than what this device already has for the same collar.
+          if (fresh.length > 0) {
+            setDogs((prev) => {
+              const merged = mergeDogLists(prev, fresh);
+              dogsRef.current = merged;
+              return merged;
+            });
+          }
         }
 
         // Restore User's Saved Map Annotations from Cloud Firestore
@@ -201,6 +229,13 @@ export default function App() {
     currentUser,
     userNickname: currentSession?.myNickname || userProfile?.displayName,
   });
+
+  // The auth effect restores the hunter's saved collars long after the render that created its
+  // closure, so it calls the current handler through this ref: the handler it captured could
+  // predate the hunt being loaded, and a collar restored with no session attached would be
+  // added locally but never revived for the rest of the party.
+  const handleAddDogRef = useRef(handleAddDog);
+  handleAddDogRef.current = handleAddDog;
 
   const [selectedHunterId, setSelectedHunterId] = useState<string | null>(null);
 
