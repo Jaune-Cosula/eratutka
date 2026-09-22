@@ -696,7 +696,13 @@ export const saveSessionPartial = async (
     radioMessages?: RadioMessage[];
     revivedDogIds?: string[];
   },
-  forceImmediate = false
+  forceImmediate = false,
+  /**
+   * Whether this change is worth keeping in the cloud copy. Live telemetry is not: it travels
+   * on the relay and is persisted on each device, and mirroring it here burned the project's
+   * whole daily write allowance. See `saveSessionDogsTelemetry`.
+   */
+  durable = true
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
   const key = activeHuntKey;
@@ -754,8 +760,10 @@ export const saveSessionPartial = async (
   await flushPendingDeletions(code);
 
   // 3. Skip the cloud write when there is no capability key (nothing to write to), when
-  //    the Firestore quota is exceeded, or when this client is known to be outdated.
+  //    the Firestore quota is exceeded, when this client is known to be outdated, or when the
+  //    caller said the change is live telemetry rather than something worth keeping cold.
   if (
+    !durable ||
     !key ||
     !isRemoteSession(code) ||
     getIsFirestoreQuotaExceeded() ||
@@ -876,6 +884,35 @@ export const saveSessionRadio = async (
   forceImmediate = true
 ): Promise<void> => {
   return saveSessionPartial(sessionCode, { radioMessages }, forceImmediate);
+};
+
+/**
+ * Live dog telemetry: the relay and this device's own storage, never the cloud copy.
+ *
+ * Positions and track history change continuously, and a collar being added, removed or
+ * imported is a different matter - that is the list itself, and it still goes to the cloud.
+ * This is only about the stream of position updates, which used to write the session document
+ * every 30 seconds for as long as any device had the hunt open (~2 900 writes a day per
+ * device). With a few devices that alone exhausted the project's free daily write allowance,
+ * and the database AI Studio provisions cannot be raised above the free tier by billing.
+ *
+ * Nothing is lost by not keeping it cold: the relay carries positions to the party live, and
+ * every device already persists its own dogs and history locally.
+ */
+export const saveSessionDogsTelemetry = async (
+  sessionCode: string,
+  dogs: Dog[]
+): Promise<void> => {
+  const safeDogs = (dogs || []).filter((d) => !isDogDeleted(d));
+  return saveSessionPartial(sessionCode, { dogs: safeDogs }, false, false);
+};
+
+/** Hunter positions, for the same reason as `saveSessionDogsTelemetry`. */
+export const saveSessionTeamPositions = async (
+  sessionCode: string,
+  members: TeamMember[]
+): Promise<void> => {
+  return saveSessionPartial(sessionCode, { members }, false, false);
 };
 
 export const saveSessionToFirebase = async (

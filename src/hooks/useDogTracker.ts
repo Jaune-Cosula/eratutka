@@ -12,7 +12,7 @@ import {
   clearPendingDeletedIds,
 } from '../utils/geoUtils';
 import { playBarkSpikeAlert } from '../utils/audioAlerts';
-import { saveSessionDogs, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders } from '../services/userService';
+import { saveSessionDogs, saveSessionDogsTelemetry, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders } from '../services/userService';
 import { fetchDevicePosition, fetchDeviceHistory, extractTractiveToken } from '../services/collarService';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -419,8 +419,9 @@ export function useDogTracker({
         setDogs([...finalList]);
 
         if (sessionCode) {
-          // Local persistence happens in the throttled effect above
-          saveSessionDogs(sessionCode, finalList);
+          // Local persistence happens in the throttled effect above. This is the telemetry
+          // stream, so it goes to the relay only - not into the cloud copy.
+          saveSessionDogsTelemetry(sessionCode, finalList);
         }
       }
     };

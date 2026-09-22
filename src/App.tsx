@@ -58,6 +58,7 @@ import {
   saveSessionAnnotations,
   saveSessionDogs,
   saveSessionTeam,
+  saveSessionTeamPositions,
   saveSessionRadio,
   setActiveHuntKey,
   setSessionAccessDeniedHandler,
@@ -680,7 +681,8 @@ export default function App() {
     if (updated) {
       teamRef.current = newTeam;
       setTeam(newTeam);
-      saveSessionTeam(currentSession.code, newTeam);
+      // Own position updates are telemetry: relay and local storage, not the cloud copy.
+      saveSessionTeamPositions(currentSession.code, newTeam);
     }
   }, [userLocation, currentSession]);
 
