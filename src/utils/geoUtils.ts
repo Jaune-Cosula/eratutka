@@ -364,6 +364,28 @@ const DELETED_DOGS_STORAGE_KEY = 'eratutka_deleted_dogs_registry';
 // Fast in-memory cache of deleted identifiers to prevent async storage race conditions
 let cachedDeletedDogIds: Set<string> | null = null;
 
+// The registry is read once and cached for the life of the page, so anything that changes it
+// from outside this document - another tab, a cleanup typed into the console - has to drop the
+// cache. Without this the app keeps filtering with a list that no longer exists, and clearing
+// the registry appears to do nothing until the page is reloaded.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === DELETED_DOGS_STORAGE_KEY) cachedDeletedDogIds = null;
+  });
+}
+
+/**
+ * True for entries that can never be an identifier.
+ *
+ * An identifier is a dog id, an IMEI, a Tractive token or a share URL, so it never contains
+ * whitespace; and the synthetic `name:<petName>` keys an older client wrote are not identifiers
+ * either. What is left are descriptions like `Nirppu` or `Tractive GPS (Kissa / Koira)`, which
+ * an older version of the app used as identity and which have sat in the registry ever since.
+ * They match no dog - that is exactly why dropping them is safe: they cannot be hiding anything.
+ * Keeping them would only mislead the next person reading the registry.
+ */
+const isImpossibleIdentifier = (id: string): boolean => /\s/.test(id) || /^name:/i.test(id);
+
 function normalizeIdentifier(raw: string | undefined | null): string[] {
   if (!raw) return [];
   const s = String(raw).trim();
@@ -458,6 +480,7 @@ export function getDeletedDogIds(): Set<string> {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         for (const item of parsed) {
+          if (typeof item !== 'string' || isImpossibleIdentifier(item)) continue;
           normalizeIdentifier(item).forEach((id) => set.add(id));
         }
       }
