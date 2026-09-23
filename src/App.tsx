@@ -1231,6 +1231,7 @@ export default function App() {
           isSignedIn={Boolean(currentUser)}
           userName={userProfile?.displayName || userProfile?.email || undefined}
           onOpenAuthModal={() => setShowUserAuthModal(true)}
+          currentHuntCode={currentSession?.code}
         />
       )}
 

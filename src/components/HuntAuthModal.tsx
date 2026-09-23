@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Users, Key, Plus, LogIn, CheckCircle2, Lock, UserCheck, Dog as DogIcon, User, X } from 'lucide-react';
+import { Shield, Users, Key, Plus, LogIn, CheckCircle2, Lock, UserCheck, Dog as DogIcon, User, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { HuntSession, HunterRole, TeamMember, Dog, MapAnnotation } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { listStoredHunts, forgetStoredHunt, StoredHunt } from '../services/huntIndex';
 import {
   saveSessionToFirebase,
   createSessionOnServer,
@@ -25,6 +26,8 @@ interface HuntAuthModalProps {
   isSignedIn?: boolean;
   userName?: string;
   onOpenAuthModal?: () => void;
+  /** The hunt that is open right now, marked in the list of stored hunts and never cleared. */
+  currentHuntCode?: string;
 }
 
 export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
@@ -37,6 +40,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   isSignedIn = false,
   userName,
   onOpenAuthModal,
+  currentHuntCode,
 }) => {
   const { language } = useLanguage();
   const urlParams = new URLSearchParams(window.location.search);
@@ -69,6 +73,49 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   useEffect(() => {
     if (!includeDogsChosen && currentDogs.length > 0) setIncludeDogsMode('current');
   }, [includeDogsChosen, currentDogs.length]);
+
+  // What this device has stored for each hunt it has taken part in. Read when the screen opens
+  // and after every cleanup, because storage is the only place that knows.
+  const [storedHunts, setStoredHunts] = useState<StoredHunt[]>([]);
+  const [showStoredHunts, setShowStoredHunts] = useState(false);
+  useEffect(() => {
+    setStoredHunts(listStoredHunts());
+  }, []);
+
+  const formatHuntLastUsed = (timestamp?: number): string => {
+    if (!timestamp) return language === 'fi' ? 'ei aikaleimaa' : 'no timestamp';
+    const date = new Date(timestamp);
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sameDay = new Date().toDateString() === date.toDateString();
+    return sameDay
+      ? (language === 'fi' ? `tänään ${time}` : `today ${time}`)
+      : `${date.toLocaleDateString()} ${time}`;
+  };
+
+  const formatHuntSize = (bytes: number): string =>
+    bytes >= 1024 * 1024
+      ? `${(bytes / 1024 / 1024).toFixed(1)} Mt`
+      : `${Math.max(1, Math.round(bytes / 1024))} kt`;
+
+  const huntsToClear = storedHunts.filter((hunt) => hunt.code !== currentHuntCode);
+
+  const handleForgetHunt = (hunt: StoredHunt) => {
+    const label = language === 'fi'
+      ? `Poista jahdin ${hunt.code} tiedot tältä laitteelta?\n\nMukana lähtevät myös sen merkinnät (${hunt.annotationCount} kpl) ja koiralista. Pilvikopiota tämä ei poista.`
+      : `Remove the data for hunt ${hunt.code} from this device?\n\nIts markers (${hunt.annotationCount}) and collar list go too. The cloud copy is not touched.`;
+    if (!window.confirm(label)) return;
+    forgetStoredHunt(hunt.code, currentHuntCode);
+    setStoredHunts(listStoredHunts());
+  };
+
+  const handleForgetAllOtherHunts = () => {
+    const label = language === 'fi'
+      ? `Poista ${huntsToClear.length} muun jahdin tiedot tältä laitteelta (${formatHuntSize(huntsToClear.reduce((sum, h) => sum + h.bytes, 0))})?\n\nNykyinen jahti säilyy. Pilvikopioita tämä ei poista.`
+      : `Remove the data for ${huntsToClear.length} other hunts from this device (${formatHuntSize(huntsToClear.reduce((sum, h) => sum + h.bytes, 0))})?\n\nThe current hunt is kept. Cloud copies are not touched.`;
+    if (!window.confirm(label)) return;
+    huntsToClear.forEach((hunt) => forgetStoredHunt(hunt.code, currentHuntCode));
+    setStoredHunts(listStoredHunts());
+  };
 
   // Join form state
   const [joinCode, setJoinCode] = useState(paramHuntCode ? paramHuntCode.toUpperCase() : '');
@@ -585,6 +632,80 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
                 <span>{language === 'fi' ? 'Liity jahtipäivään' : 'Join Hunt Session'}</span>
               </button>
             </form>
+          )}
+
+          {/* Hunts stored on this device. Not a way back into an old hunt: the capability key
+              is stripped before a session is stored, so returning takes that hunt's share link
+              or code + PIN. This is for seeing what is kept here and clearing what is not needed
+              - the precise alternative to wiping the browser's site data. */}
+          {storedHunts.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-stone-800/70">
+              <button
+                type="button"
+                onClick={() => setShowStoredHunts((prev) => !prev)}
+                className="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-stone-400 hover:text-stone-200 transition cursor-pointer"
+              >
+                <span>
+                  {language === 'fi'
+                    ? `Tämän laitteen jahdit (${storedHunts.length})`
+                    : `Hunts on this device (${storedHunts.length})`}
+                </span>
+                {showStoredHunts ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+
+              {showStoredHunts && (
+                <div className="mt-2.5 space-y-1.5">
+                  {storedHunts.map((hunt) => {
+                    const isCurrent = hunt.code === currentHuntCode;
+                    return (
+                      <div
+                        key={hunt.code}
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-stone-950/70 border border-stone-800"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs font-mono font-bold text-amber-300">{hunt.code}</span>
+                            {isCurrent && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold uppercase">
+                                {language === 'fi' ? 'nykyinen' : 'current'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-stone-400 truncate">
+                            {hunt.name ? `${hunt.name} • ` : ''}
+                            {formatHuntLastUsed(hunt.lastUsedAt)} • {formatHuntSize(hunt.bytes)} •{' '}
+                            {hunt.dogCount} {language === 'fi' ? 'koiraa' : 'dogs'} •{' '}
+                            {hunt.annotationCount} {language === 'fi' ? 'merkintää' : 'markers'}
+                          </p>
+                        </div>
+                        {!isCurrent && (
+                          <button
+                            type="button"
+                            onClick={() => handleForgetHunt(hunt)}
+                            title={language === 'fi' ? 'Poista tämän jahdin tiedot laitteelta' : 'Remove this hunt from the device'}
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {huntsToClear.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleForgetAllOtherHunts}
+                      className="w-full p-2 rounded-xl border border-stone-800 text-stone-400 hover:text-red-400 hover:border-red-500/40 text-[11px] font-bold transition cursor-pointer"
+                    >
+                      {language === 'fi'
+                        ? `Siivoa ${huntsToClear.length} muuta (${formatHuntSize(huntsToClear.reduce((sum, h) => sum + h.bytes, 0))})`
+                        : `Clear ${huntsToClear.length} others (${formatHuntSize(huntsToClear.reduce((sum, h) => sum + h.bytes, 0))})`}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
