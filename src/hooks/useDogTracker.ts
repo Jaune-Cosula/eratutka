@@ -3,6 +3,7 @@ import { Dog, DogTrackPoint } from '../types';
 import {
   calculateDistance,
   pruneExpiredTrackPoints,
+  serializeDogsForStorage,
   getDeletedDogIds,
   getDogIdentifiers,
   markDogAsDeleted,
@@ -78,16 +79,23 @@ export function useDogTracker({
   const pendingLocalSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
-   * Persists the dog list under both the session-scoped and the generic key.
-   * Never throws: a full storage quota must not break telemetry handling.
+   * Persists the dog list for this hunt. Never throws - a full storage quota must not break
+   * telemetry handling - but never fails silently either: a write that is quietly dropped is
+   * how a stale deletion marker survived on a phone and kept hiding a collar.
    */
   const persistDogsLocally = (list: Dog[], code: string) => {
+    const key = `eratutka_dogs_${code}`;
     try {
-      const serialized = JSON.stringify(list);
-      localStorage.setItem(`eratutka_dogs_${code}`, serialized);
-      localStorage.setItem('eratutka_dogs', serialized);
+      localStorage.setItem(key, serializeDogsForStorage(list));
     } catch (e) {
-      // Quota exceeded or storage unavailable: in-memory state stays authoritative
+      // Even the trimmed copy did not fit. Clear the old value and keep the current state
+      // without history rather than leaving stale dogs behind on the device.
+      try {
+        localStorage.removeItem(key);
+        localStorage.setItem(key, serializeDogsForStorage(list, 0));
+      } catch (e2) {
+        console.warn('Erätutka: koiralistan tallennus epäonnistui (tallennustila täynnä).');
+      }
     }
     lastLocalSaveRef.current = Date.now();
   };

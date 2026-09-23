@@ -765,6 +765,39 @@ export function mergeDogLists(
 }
 
 /**
+ * Serializes the dog list for localStorage, dropping the oldest track points until it fits.
+ *
+ * The list is written to the device on every save, and with up to 5 000 points per collar
+ * (~12 h) a handful of collars already approaches the browser's ~5 MB quota — and it used to
+ * be written under two keys on top of that. When the quota is reached `setItem` throws and the
+ * write is simply lost, which is how a stale deletion marker survived a reload on a phone and
+ * kept hiding a collar while the same code worked on a desktop with more room.
+ *
+ * Only the copy on disk is trimmed: the in-memory list keeps the full history for the map and
+ * the relay carries it to the rest of the party, so nothing is lost while the app is running.
+ */
+const TRACK_POINT_KEEP_STEPS = [5000, 1000, 250, 50, 0];
+
+export function serializeDogsForStorage(dogs: Dog[], budgetBytes = 1_200_000): string {
+  const withHistoryKept = (keep: number) =>
+    JSON.stringify(
+      (dogs || []).map((dog) =>
+        keep > 0
+          ? { ...dog, trackHistory: (dog.trackHistory || []).slice(-keep) }
+          : { ...dog, trackHistory: [] }
+      )
+    );
+
+  let smallest = withHistoryKept(0);
+  for (const keep of TRACK_POINT_KEEP_STEPS) {
+    const serialized = withHistoryKept(keep);
+    smallest = serialized;
+    if (serialized.length <= budgetBytes) return serialized;
+  }
+  return smallest;
+}
+
+/**
  * Generates GPX XML string for exporting dog tracks and map annotations.
  */
 export function generateGpx(dogs: Dog[], annotations: MapAnnotation[]): string {

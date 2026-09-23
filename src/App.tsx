@@ -40,6 +40,7 @@ import {
   getDogIdentifiers,
   clearDogFromDeleted,
   clearPendingDeletedIds,
+  serializeDogsForStorage,
 } from './utils/geoUtils';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -754,7 +755,9 @@ export default function App() {
         saveSessionAnnotations(currentSession.code, updatedAnno);
       }
       if (importedDogs.length > 0) {
-        localStorage.setItem(`eratutka_dogs_${currentSession.code}`, JSON.stringify(updatedDogs));
+        try {
+          localStorage.setItem(`eratutka_dogs_${currentSession.code}`, serializeDogsForStorage(updatedDogs));
+        } catch (e) {}
         saveSessionDogs(currentSession.code, updatedDogs);
       }
 
@@ -941,7 +944,9 @@ export default function App() {
 
     setDogs(sessionDogs);
     dogsRef.current = sessionDogs;
-    localStorage.setItem(`eratutka_dogs_${finalSession.code}`, JSON.stringify(sessionDogs));
+    try {
+      localStorage.setItem(`eratutka_dogs_${finalSession.code}`, serializeDogsForStorage(sessionDogs));
+    } catch (e) {}
 
     if (sessionDogs.length > 0) {
       setSelectedDogId(sessionDogs[0].id);
