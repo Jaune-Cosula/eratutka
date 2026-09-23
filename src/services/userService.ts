@@ -217,19 +217,13 @@ export const saveUserProfile = async (profile: UserProfile): Promise<void> => {
 
   if (getIsFirestoreQuotaExceeded()) return;
 
-  try {
-    const userRef = doc(db, 'users', profile.uid);
-    await setDoc(
-      userRef,
-      {
-        ...profile,
-        updatedAt: Date.now(),
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    handleFirestoreError(err, 'saveUserProfile');
-  }
+  // Best effort, and never awaited: the local copy above is what the app reads. Awaiting a
+  // cloud write is what made signing in sit on "käsitellään..." forever - when the write quota
+  // is exhausted Firestore does not fail fast, it keeps retrying with a growing backoff, so the
+  // promise never settles. Every cloud write below follows this same rule.
+  const userRef = doc(db, 'users', profile.uid);
+  setDoc(userRef, { ...profile, updatedAt: Date.now() }, { merge: true })
+    .catch((err) => handleFirestoreError(err, 'saveUserProfile'));
 };
 
 // User Dogs Sync (Saved under users/{uid}/dogs/{dogId})
@@ -274,12 +268,8 @@ export const saveDogToUserFirebase = async (uid: string, dog: Dog): Promise<void
 
   if (getIsFirestoreQuotaExceeded()) return;
 
-  try {
-    const dogRef = doc(db, 'users', uid, 'dogs', dog.id);
-    await setDoc(dogRef, dog, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, 'saveDogToUserFirebase');
-  }
+  setDoc(doc(db, 'users', uid, 'dogs', dog.id), dog, { merge: true })
+    .catch((err) => handleFirestoreError(err, 'saveDogToUserFirebase'));
 };
 
 export const removeDogFromUserFirebase = async (
@@ -315,12 +305,8 @@ export const removeDogFromUserFirebase = async (
 
   for (const id of ids) {
     if (!id) continue;
-    try {
-      const dogRef = doc(db, 'users', uid, 'dogs', id);
-      await deleteDoc(dogRef);
-    } catch (err) {
-      handleFirestoreError(err, 'removeDogFromUserFirebase');
-    }
+    deleteDoc(doc(db, 'users', uid, 'dogs', id))
+      .catch((err) => handleFirestoreError(err, 'removeDogFromUserFirebase'));
   }
 };
 
@@ -369,12 +355,8 @@ export const saveAnnotationToUserFirebase = async (
 
   if (getIsFirestoreQuotaExceeded()) return;
 
-  try {
-    const annotRef = doc(db, 'users', uid, 'mapAnnotations', annotation.id);
-    await setDoc(annotRef, annotation, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, 'saveAnnotationToUserFirebase');
-  }
+  setDoc(doc(db, 'users', uid, 'mapAnnotations', annotation.id), annotation, { merge: true })
+    .catch((err) => handleFirestoreError(err, 'saveAnnotationToUserFirebase'));
 };
 
 export const removeAnnotationFromUserFirebase = async (
@@ -392,12 +374,8 @@ export const removeAnnotationFromUserFirebase = async (
 
   if (getIsFirestoreQuotaExceeded()) return;
 
-  try {
-    const annotRef = doc(db, 'users', uid, 'mapAnnotations', annotationId);
-    await deleteDoc(annotRef);
-  } catch (err) {
-    handleFirestoreError(err, 'removeAnnotationFromUserFirebase');
-  }
+  deleteDoc(doc(db, 'users', uid, 'mapAnnotations', annotationId))
+    .catch((err) => handleFirestoreError(err, 'removeAnnotationFromUserFirebase'));
 };
 
 // Realtime Session Synchronization (sessions/{sessionCode})
