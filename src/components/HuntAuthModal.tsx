@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Shield, Users, Key, Plus, LogIn, CheckCircle2, Lock, UserCheck, Dog as DogIcon, User, X } from 'lucide-react';
 import { HuntSession, HunterRole, TeamMember, Dog, MapAnnotation } from '../types';
 import { useLanguage } from '../context/LanguageContext';
@@ -16,6 +16,15 @@ interface HuntAuthModalProps {
   canCloseWithoutSession?: boolean;
   currentDogs?: Dog[];
   currentAnnotations?: MapAnnotation[];
+  /**
+   * Signed-in state, so a hunter can pull their saved collars in *before* the hunt exists.
+   * Signing in restores them into the collar list (see App), which is what makes the "Omat
+   * koirat" choice below possible on a device that has never seen them - a new phone, or one
+   * whose site data was cleared.
+   */
+  isSignedIn?: boolean;
+  userName?: string;
+  onOpenAuthModal?: () => void;
 }
 
 export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
@@ -25,6 +34,9 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   canCloseWithoutSession = false,
   currentDogs = [],
   currentAnnotations = [],
+  isSignedIn = false,
+  userName,
+  onOpenAuthModal,
 }) => {
   const { language } = useLanguage();
   const urlParams = new URLSearchParams(window.location.search);
@@ -48,6 +60,15 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   const [includeDogsMode, setIncludeDogsMode] = useState<'current' | 'empty'>(
     currentDogs.length > 0 ? 'current' : 'empty'
   );
+
+  // Signing in from this screen restores the hunter's saved collars, and those are exactly what
+  // they came to include - so follow along until they choose for themselves. Without this the
+  // choice stayed on "start clean" as it was initialised when the list was still empty, and the
+  // collars they just brought in would be quietly left out.
+  const [includeDogsChosen, setIncludeDogsChosen] = useState(false);
+  useEffect(() => {
+    if (!includeDogsChosen && currentDogs.length > 0) setIncludeDogsMode('current');
+  }, [includeDogsChosen, currentDogs.length]);
 
   // Join form state
   const [joinCode, setJoinCode] = useState(paramHuntCode ? paramHuntCode.toUpperCase() : '');
@@ -341,11 +362,43 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
                 <label className="block text-xs font-bold uppercase text-stone-400">
                   {language === 'fi' ? 'Jahtiin liitettävät koirat' : 'Dogs to Include'}
                 </label>
+
+                {/* Signing in already restores the saved collars into the list (App does it on
+                    the auth state change), so this only has to offer the way in and say what it
+                    brought. */}
+                {onOpenAuthModal && !isSignedIn && (
+                  <button
+                    type="button"
+                    onClick={onOpenAuthModal}
+                    className="w-full p-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 transition flex items-center space-x-2.5 text-left cursor-pointer"
+                  >
+                    <LogIn className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-[11px] leading-snug font-semibold">
+                      {language === 'fi'
+                        ? 'Kirjaudu sisään, niin omat tallennetut pantasi ovat valittavissa tähän jahtiin.'
+                        : 'Sign in to have your saved collars available for this hunt.'}
+                    </span>
+                  </button>
+                )}
+
+                {isSignedIn && userName && (
+                  <p className="text-[11px] text-emerald-400 flex items-center space-x-1.5 px-1">
+                    <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {language === 'fi'
+                        ? `Kirjautuneena ${userName} — tallennetut pannat ovat alla valittavissa.`
+                        : `Signed in as ${userName} — your saved collars are available below.`}
+                    </span>
+                  </p>
+                )}
                 {currentDogs.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setIncludeDogsMode('current')}
+                      onClick={() => {
+                        setIncludeDogsChosen(true);
+                        setIncludeDogsMode('current');
+                      }}
                       className={`p-3 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                         includeDogsMode === 'current'
                           ? 'bg-amber-500/20 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
@@ -367,7 +420,10 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => setIncludeDogsMode('empty')}
+                      onClick={() => {
+                        setIncludeDogsChosen(true);
+                        setIncludeDogsMode('empty');
+                      }}
                       className={`p-3 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                         includeDogsMode === 'empty'
                           ? 'bg-amber-500/20 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
@@ -395,8 +451,8 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
                     </div>
                     <p className="text-[11px] text-stone-400 leading-snug">
                       {language === 'fi'
-                        ? 'Jahti luodaan puhtaana. Voit lisätä omat GPS-pannat (IK122, SinoTrack, Traccar ym.) heti kartan avauduttua.'
-                        : 'Hunt will be created clean. You can connect your real GPS collars right after opening the map.'}
+                        ? 'Jahti luodaan ilman koiria. Omat pannasi siirtyvät kirjastoon, josta saat ne jahtiin yhdellä ruksilla.'
+                        : 'Hunt starts with no dogs. Your own collars are kept in the library, one tick away.'}
                     </p>
                   </div>
                 )}

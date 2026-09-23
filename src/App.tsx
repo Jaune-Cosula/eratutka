@@ -1228,6 +1228,9 @@ export default function App() {
           canCloseWithoutSession={Boolean(currentSession)}
           currentDogs={dogs}
           currentAnnotations={annotations}
+          isSignedIn={Boolean(currentUser)}
+          userName={userProfile?.displayName || userProfile?.email || undefined}
+          onOpenAuthModal={() => setShowUserAuthModal(true)}
         />
       )}
 
