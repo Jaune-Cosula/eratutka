@@ -10,7 +10,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Dog, MapAnnotation, HuntSession, TeamMember, RadioMessage } from '../types';
+import { Dog, MapAnnotation, HuntSession, TeamMember, RadioMessage, MapLayerType } from '../types';
 import {
   markDogAsDeleted,
   clearDogFromDeleted,
@@ -27,6 +27,24 @@ export interface UserProfile {
   role?: string;
   createdAt?: number;
   isAnonymous?: boolean;
+  /** User-level preferences, synced across devices. See settingsService.ts. */
+  settings?: UserSettings;
+}
+
+/**
+ * User-level preferences that follow a signed-in user across devices. Stored as a
+ * `settings` map on the `users/{uid}` document (owner-only rules already apply), so it
+ * costs no extra read at login - `fetchUserProfile` returns it with the profile.
+ *
+ * Firestore's `{merge:true}` is shallow, so a nested map is replaced wholesale: always
+ * write the full object (see saveUserSettings), never a single field.
+ */
+export interface UserSettings {
+  language?: 'fi' | 'en';
+  mapLayer?: MapLayerType;
+  showPropertyBoundaries?: boolean;
+  mmlSource?: 'kapsi' | 'custom';
+  mmlApiKey?: string;
 }
 
 // Global Quota & Offline Tracker
@@ -211,8 +229,12 @@ export const fetchUserProfile = async (uid: string): Promise<UserProfile | null>
 };
 
 export const saveUserProfile = async (profile: UserProfile): Promise<void> => {
+  // Settings live in their own field, written only by saveUserSettings. A profile write can
+  // carry a stale copy (e.g. a freshly built profile, or a fetched one passed back), so strip
+  // it here to make profile writes unable to rewrite settings - on the server or in the cache.
+  const { settings: _ignoredSettings, ...profileToWrite } = profile;
   try {
-    localStorage.setItem(`eratutka_user_profile_${profile.uid}`, JSON.stringify(profile));
+    localStorage.setItem(`eratutka_user_profile_${profile.uid}`, JSON.stringify(profileToWrite));
   } catch {}
 
   if (getIsFirestoreQuotaExceeded()) return;
@@ -222,8 +244,37 @@ export const saveUserProfile = async (profile: UserProfile): Promise<void> => {
   // is exhausted Firestore does not fail fast, it keeps retrying with a growing backoff, so the
   // promise never settles. Every cloud write below follows this same rule.
   const userRef = doc(db, 'users', profile.uid);
-  setDoc(userRef, { ...profile, updatedAt: Date.now() }, { merge: true })
+  setDoc(userRef, { ...profileToWrite, updatedAt: Date.now() }, { merge: true })
     .catch((err) => handleFirestoreError(err, 'saveUserProfile'));
+};
+
+/**
+ * Persists user-level settings. Always writes the *full* settings object: Firestore's
+ * `{merge:true}` is shallow, so a nested `settings` map is replaced wholesale and a partial
+ * write would silently drop its siblings.
+ *
+ * The per-uid local snapshot is written first and unconditionally, so the values survive
+ * offline and when the write quota is exhausted; the cloud copy is a best-effort mirror.
+ */
+export const saveUserSettings = async (uid: string, settings: UserSettings): Promise<void> => {
+  try {
+    localStorage.setItem(`eratutka_user_settings_${uid}`, JSON.stringify(settings));
+  } catch {}
+
+  if (getIsFirestoreQuotaExceeded()) return;
+
+  setDoc(doc(db, 'users', uid), { settings, updatedAt: Date.now() }, { merge: true })
+    .catch((err) => handleFirestoreError(err, 'saveUserSettings'));
+};
+
+/** Last local settings snapshot for a user - the offline fallback when the cloud is unreachable. */
+export const readCachedUserSettings = (uid: string): UserSettings | null => {
+  try {
+    const raw = localStorage.getItem(`eratutka_user_settings_${uid}`);
+    return raw ? (JSON.parse(raw) as UserSettings) : null;
+  } catch {
+    return null;
+  }
 };
 
 // User Dogs Sync (Saved under users/{uid}/dogs/{dogId})

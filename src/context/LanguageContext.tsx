@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext } from 'react';
+import { useSyncedSetting } from '../hooks/useSyncedSetting';
 
 export type Language = 'fi' | 'en';
 
@@ -246,16 +247,7 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('eratutka_language');
-    if (saved === 'en' || saved === 'fi') return saved;
-    return 'fi';
-  });
-
-  const setLanguage = (lang: Language) => {
-    setLanguageState(lang);
-    localStorage.setItem('eratutka_language', lang);
-  };
+  const [language, setLanguage] = useSyncedSetting('language');
 
   const t = translations[language];
 

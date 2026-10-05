@@ -12,6 +12,7 @@ import {
 import { calculateDistance, calculateBearing, formatDistance, wgs84ToEtrsTm35Fin, calculateDogTotalDistance, getCompassDirection, pruneExpiredTrackPoints, DOG_TRACK_MAX_AGE_MS } from '../utils/geoUtils';
 import { Compass, Crosshair, MapPin, Eye, EyeOff, Layers, ChevronDown, Play, Pause } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { useSyncedSetting } from '../hooks/useSyncedSetting';
 
 /**
  * Adds a point to the bounds only if Leaflet can actually use it. A single NaN or
@@ -129,25 +130,13 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
 
-  // MML (Maanmittauslaitos) & Kiinteistörajat state
-  const [showKiinteistorajat, setShowKiinteistorajat] = useState<boolean>(() => {
-    const saved = localStorage.getItem('eratutka_show_kiinteistorajat');
-    return saved !== null ? saved === 'true' : true;
-  });
-  const [mmlApiKey, setMmlApiKey] = useState<string>(() => {
-    return localStorage.getItem('eratutka_mml_key') || '';
-  });
-  const [mmlSource, setMmlSource] = useState<'kapsi' | 'custom'>(() => {
-    const saved = localStorage.getItem('eratutka_mml_source');
-    if (saved === 'kapsi' || saved === 'custom') return saved;
-    return localStorage.getItem('eratutka_mml_key') ? 'custom' : 'kapsi';
-  });
+  // MML (Maanmittauslaitos) & Kiinteistörajat state - account-synced settings, persisted
+  // and mirrored to the user's cloud doc by settingsService.
+  const [showKiinteistorajat, setShowKiinteistorajat] = useSyncedSetting('showPropertyBoundaries');
+  const [mmlApiKey, setMmlApiKey] = useSyncedSetting('mmlApiKey');
+  const [mmlSource, setMmlSource] = useSyncedSetting('mmlSource');
   const [showMmlKeyModal, setShowMmlKeyModal] = useState<boolean>(false);
   const [mmlTileError, setMmlTileError] = useState<boolean>(false);
-
-  useEffect(() => {
-    localStorage.setItem('eratutka_mml_source', mmlSource);
-  }, [mmlSource]);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -260,11 +249,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     if (!mapRef.current || !mapFocusTarget) return;
     mapRef.current.setView([mapFocusTarget.lat, mapFocusTarget.lng], 15, { animate: true });
   }, [mapFocusTarget]);
-
-  // Save Kiinteistörajat toggle state
-  useEffect(() => {
-    localStorage.setItem('eratutka_show_kiinteistorajat', showKiinteistorajat.toString());
-  }, [showKiinteistorajat]);
 
   // Handle MML Kiinteistörajat (Property Boundaries Overlay)
   useEffect(() => {
@@ -1797,7 +1781,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                   value={mmlApiKey}
                   onChange={(e) => {
                     setMmlApiKey(e.target.value);
-                    localStorage.setItem('eratutka_mml_key', e.target.value);
                     if (e.target.value.trim()) {
                       setMmlSource('custom');
                       setMmlTileError(false);
@@ -1825,7 +1808,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         setMmlApiKey('');
-                        localStorage.removeItem('eratutka_mml_key');
                         setMmlSource('kapsi');
                         setMmlTileError(false);
                       }}

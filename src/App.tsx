@@ -7,7 +7,6 @@ import {
   SafetySector,
   RadioMessage,
   UserLocation,
-  MapLayerType,
   HunterStatus,
   HuntSession,
 } from './types';
@@ -66,6 +65,8 @@ import {
 } from './services/userService';
 import { UserAuthModal } from './components/UserAuthModal';
 import { VersionUpdateChecker } from './components/VersionUpdateChecker';
+import { useSyncedSetting } from './hooks/useSyncedSetting';
+import { reconcileOnLogin, setSettingsUid } from './services/settingsService';
 
 /**
  * Makes the joining hunter's nickname unique inside the hunt.
@@ -90,15 +91,7 @@ function makeUniqueNickname(desired: string, existingNames: string[]): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'team' | 'annotations' | 'ruler'>('map');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
-  const [mapLayer, setMapLayer] = useState<MapLayerType>(() => {
-    const saved = localStorage.getItem('eratutka_map_layer');
-    if (saved) return saved as MapLayerType;
-    return 'mml_maasto';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('eratutka_map_layer', mapLayer);
-  }, [mapLayer]);
+  const [mapLayer, setMapLayer] = useSyncedSetting('mapLayer');
 
   // User Account & Cloud Sync State
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -125,6 +118,10 @@ export default function App() {
           };
           setUserProfile(defaultProfile);
         }
+
+        // Reconcile account-synced settings now that the profile (and its `settings`) is known:
+        // the cloud copy wins, else this device's last local snapshot, else seed from here.
+        reconcileOnLogin(user.uid, profile?.settings ?? null);
 
         // Restore the hunter's saved collars from Firestore. Two things must not happen here.
         //
@@ -175,6 +172,7 @@ export default function App() {
         }
       } else {
         setUserProfile(null);
+        setSettingsUid(null);
       }
     });
 
