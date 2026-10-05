@@ -112,8 +112,9 @@ const MIN_PLAUSIBLE_TIMESTAMP_MS = 946684800000;
  * How old a gateway-reported bark timestamp may be and still count as a *new* bark. Far
  * longer than the 5 s poll so a bark between two polls is never missed, but short enough
  * that starting the app next to a collar that barked hours ago does not announce a bark.
+ * 3 minutes accommodates cellular latency and polling intervals in the terrain.
  */
-const BARK_EVENT_MAX_AGE_MS = 60 * 1000;
+const BARK_EVENT_MAX_AGE_MS = 180 * 1000;
 
 /**
  * Parses a numeric query parameter into a bounded integer. A garbage value previously
@@ -187,20 +188,54 @@ function readBarkFromGatewayItem(item: any): { isBarking: boolean; barkRate: num
   if (!item || typeof item !== 'object') return { isBarking: false, barkRate: 0, lastBarkTime: 0 };
   const attrs = item.attributes || {};
 
-  const barkRate =
-    Number(item.barkRate ?? item.bark ?? item.barkCount ?? attrs.barkRate ?? attrs.bark ?? 0) || 0;
+  const rawBark =
+    item.barkRate ??
+    item.bark ??
+    item.barks ??
+    item.barkCount ??
+    item.bark_rate ??
+    item.bark_count ??
+    attrs.barkRate ??
+    attrs.bark ??
+    attrs.barks ??
+    attrs.barkCount ??
+    attrs.bark_rate ??
+    attrs.bark_count ??
+    attrs.sound ??
+    attrs.soundLevel ??
+    attrs.noise ??
+    0;
+
+  const barkRate = typeof rawBark === 'number' ? rawBark : (parseInt(String(rawBark), 10) || 0);
 
   const isBarking = Boolean(
     item.isBarking ||
       item.barking ||
+      item.is_barking ||
       attrs.isBarking ||
       attrs.barking ||
+      attrs.is_barking ||
       alarmIndicatesBarking(item.alarm) ||
       alarmIndicatesBarking(attrs.alarm) ||
+      alarmIndicatesBarking(item.alarmType) ||
+      alarmIndicatesBarking(attrs.alarmType) ||
+      alarmIndicatesBarking(item.event) ||
+      alarmIndicatesBarking(attrs.event) ||
       barkRate > 0
   );
 
-  const lastBarkTime = normalizeTimestampMs(item.lastBarkTime ?? attrs.lastBarkTime, 0);
+  const rawLastBark =
+    item.lastBarkTime ??
+    item.last_bark_time ??
+    item.barkTime ??
+    item.bark_time ??
+    item.lastBarkTimestamp ??
+    attrs.lastBarkTime ??
+    attrs.last_bark_time ??
+    attrs.barkTime ??
+    attrs.lastBarkTimestamp;
+
+  const lastBarkTime = normalizeTimestampMs(rawLastBark, 0);
 
   return { isBarking, barkRate, lastBarkTime };
 }
@@ -663,10 +698,21 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                 item.attributes?.lng ??
                 item.attributes?.lon;
 
-              const latVal =
+              let latVal =
                 typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat || ''));
-              const lngVal =
+              let lngVal =
                 typeof rawLng === 'number' ? rawLng : parseFloat(String(rawLng || ''));
+
+              const itemBark = readBarkFromGatewayItem(item);
+              const itemIsBarking = itemBark.isBarking;
+              const itemBarkRate = itemBark.barkRate > 0 ? itemBark.barkRate : itemIsBarking ? 15 : 0;
+              const itemLastBarkTime = itemBark.lastBarkTime;
+
+              const existingRec = findMatchingGpsRecord(cleanId);
+              if ((isNaN(latVal) || isNaN(lngVal) || latVal === 0 || lngVal === 0) && existingRec && existingRec.lat !== 0 && (itemIsBarking || itemBarkRate > 0 || itemLastBarkTime > 0)) {
+                latVal = existingRec.lat;
+                lngVal = existingRec.lng;
+              }
 
               if (!isNaN(latVal) && !isNaN(lngVal) && latVal !== 0 && lngVal !== 0) {
                 foundLat = latVal;
@@ -693,10 +739,8 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                   item.timestamp ?? item.lastSeen ?? item.time
                 );
 
-                const itemBark = readBarkFromGatewayItem(item);
-                const itemIsBarking = itemBark.isBarking;
-                foundBarkRate = itemBark.barkRate > 0 ? itemBark.barkRate : itemIsBarking ? 15 : 0;
-                foundLastBarkTime = itemBark.lastBarkTime;
+                foundBarkRate = itemBarkRate;
+                foundLastBarkTime = itemLastBarkTime;
 
                 foundSatellites = Number(
                   item.satellites ??
@@ -830,6 +874,14 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
 
             const csqMatch = text.match(/CSQ[:\s]*([0-9]+)/i);
             if (csqMatch) foundCsq = parseInt(csqMatch[1], 10);
+
+            const barkMatch = text.match(/(?:BARK|Bark|Haukku|Barks)[:=\s]*([0-9]+)/i);
+            if (barkMatch) {
+              const bVal = parseInt(barkMatch[1], 10);
+              if (!isNaN(bVal) && bVal > 0) {
+                foundBarkRate = bVal;
+              }
+            }
           }
         }
       } catch {}
@@ -982,9 +1034,9 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
 
     try {
       const endpoints = [
-        `${baseUrl}/api/history/${encodeURIComponent(cleanId)}?since=${since || 0}&limit=2000`,
-        `${baseUrl}/api/history?id=${encodeURIComponent(cleanId)}&since=${since || 0}&limit=2000`,
-        `${baseUrl}/api/positions?id=${encodeURIComponent(cleanId)}&since=${since || 0}&limit=2000`,
+        `${baseUrl}/api/history/${encodeURIComponent(cleanId)}?since=${since || 0}&limit=5000`,
+        `${baseUrl}/api/history?id=${encodeURIComponent(cleanId)}&since=${since || 0}&limit=5000`,
+        `${baseUrl}/api/positions?id=${encodeURIComponent(cleanId)}&since=${since || 0}&limit=5000`,
         rawUrl.includes('/api/positions') ? rawUrl : `${baseUrl}/api/positions`,
         `${baseUrl}/api/tracks?id=${encodeURIComponent(cleanId)}&since=${since || 0}`,
       ];
@@ -1006,6 +1058,8 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
               : (Array.isArray(json.points) ? json.points : (Array.isArray(json.positions) ? json.positions : (Array.isArray(json.data) ? json.data : [])));
 
             if (list.length > 0) {
+              let lastKnownValidLat: number | null = null;
+              let lastKnownValidLng: number | null = null;
               for (const item of list) {
                 // Filter out points belonging to other devices if identifier is present
                 const itemDeviceId = String(
@@ -1043,16 +1097,25 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
                   item.attributes?.lng ??
                   item.attributes?.lon;
 
-                const latVal =
+                let latVal =
                   typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat || ''));
-                const lngVal =
+                let lngVal =
                   typeof rawLng === 'number' ? rawLng : parseFloat(String(rawLng || ''));
+
+                const histBark = readBarkFromGatewayItem(item);
+                const bark = histBark.barkRate;
+                const isBark = histBark.isBarking;
+
+                if (!isNaN(latVal) && !isNaN(lngVal) && latVal !== 0 && lngVal !== 0) {
+                  lastKnownValidLat = latVal;
+                  lastKnownValidLng = lngVal;
+                } else if ((isNaN(latVal) || isNaN(lngVal) || latVal === 0 || lngVal === 0) && (isBark || bark > 0) && lastKnownValidLat !== null && lastKnownValidLng !== null) {
+                  latVal = lastKnownValidLat;
+                  lngVal = lastKnownValidLng;
+                }
 
                 if (!isNaN(latVal) && !isNaN(lngVal) && latVal !== 0 && lngVal !== 0) {
                   const ts = normalizeTimestampMs(item.timestamp ?? item.lastSeen ?? item.time);
-                  const histBark = readBarkFromGatewayItem(item);
-                  const bark = histBark.barkRate;
-                  const isBark = histBark.isBarking;
                   const pt: GpsPointHistoryRecord = {
                     lat: latVal,
                     lng: lngVal,
@@ -1242,7 +1305,7 @@ app.get('/api/gps/history/:id', async (req, res) => {
 
     const since = parseBoundedInt(req.query.since, 0, 0, Number.MAX_SAFE_INTEGER);
     const hours = parseBoundedInt(req.query.hours, 12, 1, 24);
-    const limit = parseBoundedInt(req.query.limit, 2000, 1, 5000);
+    const limit = parseBoundedInt(req.query.limit, 5000, 1, 10000);
     const gatewayUrl = req.query.gatewayUrl ? String(req.query.gatewayUrl) : undefined;
     const cutoffTime = Math.max(since, Date.now() - hours * 60 * 60 * 1000);
 
@@ -2376,7 +2439,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.12';
+const ERATUTKA_VERSION = '2.7.13';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {

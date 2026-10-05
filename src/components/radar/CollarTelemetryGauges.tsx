@@ -43,6 +43,21 @@ export const CollarTelemetryGauges: React.FC<CollarTelemetryGaugesProps> = ({
           <div className="text-[10px] text-amber-300 font-mono mt-1">
             ⏱️ Tauon pito ({dog.barkHoldRemainingFixes}/3 pk)
           </div>
+        ) : dog.lastBarkTimestamp ? (
+          <div
+            className={`text-[9.5px] font-mono mt-1 truncate ${
+              Date.now() - dog.lastBarkTimestamp < 5 * 60 * 1000
+                ? 'text-amber-400 font-semibold'
+                : 'text-stone-400'
+            }`}
+            title={`Viimeisin haukku: ${new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+          >
+            🔊 Viim. {new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' })} ({
+              Math.floor((Date.now() - dog.lastBarkTimestamp) / 60000) < 1
+                ? 'juuri nyt'
+                : `${Math.floor((Date.now() - dog.lastBarkTimestamp) / 60000)} min sitten`
+            })
+          </div>
         ) : null}
       </div>
 

@@ -154,6 +154,8 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
           battery: data.battery ?? dogToSync.battery ?? 95,
           heading: data.heading ?? dogToSync.heading ?? 0,
           barkRate: reportedBark,
+          barkHoldRemainingFixes: data.barkHoldRemainingFixes ?? dogToSync.barkHoldRemainingFixes,
+          lastBarkTimestamp: data.lastBarkTimestamp || dogToSync.lastBarkTimestamp,
           status: reportedStatus,
           telematicsProvider: isTractive ? 'tractive' : 'eratutka_direct',
           gatewayServerUrl: isTractive ? (dogToSync.tractiveShareUrl || gwUrl) : gwUrl,

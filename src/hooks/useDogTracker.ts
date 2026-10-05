@@ -712,8 +712,9 @@ export function useDogTracker({
           if (lastPt) {
             const dM = calculateDistance(lastPt.lat, lastPt.lng, newLat, newLng);
             const timeDiff = Math.abs(now - lastPt.timestamp);
-            // If stationary (< 2m, speed < 1 km/h and recent update < 10s), don't duplicate stationary point
-            if (dM < 2.0 && (updates.speed ?? dog.speed ?? 0) < 1 && timeDiff < 10000) {
+            // If stationary (< 2m, speed < 1 km/h and recent update < 10s), don't duplicate stationary point UNLESS dog is barking
+            const isBarking = (updates.barkRate ?? dog.barkRate ?? 0) > 0 || updates.status === 'haukkuu';
+            if (dM < 2.0 && (updates.speed ?? dog.speed ?? 0) < 1 && timeDiff < 10000 && !isBarking) {
               shouldAppend = false;
             }
           }

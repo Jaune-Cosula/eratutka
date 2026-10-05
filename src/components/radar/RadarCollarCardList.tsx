@@ -187,6 +187,18 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                         {bearing !== null && <span className="text-[10px] text-stone-400">({bearing}°)</span>}
                       </span>
                     )}
+                    {dog.status !== 'haukkuu' && dog.lastBarkTimestamp && (
+                      <span
+                        className={`text-[10px] font-mono flex items-center space-x-1 ${
+                          Date.now() - dog.lastBarkTimestamp < 5 * 60 * 1000
+                            ? 'text-amber-400 font-semibold'
+                            : 'text-stone-400'
+                        }`}
+                        title={`Viimeisin haukku: ${new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+                      >
+                        <span>🔊 Viim. {new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </span>
+                    )}
                   </div>
 
                   {onDeleteDog && (

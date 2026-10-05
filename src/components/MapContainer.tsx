@@ -892,23 +892,39 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         dogs[0];
 
     // Direction to the tracked dog: a short arrow at the hunter's own position, rotated to
-    // point at the dog. It replaces the straight line that used to connect the two, which
-    // spanned the whole map and was easy to mistake for the dog's own track. Pixel-sized,
-    // so it reads the same at every zoom level, and interactive:false so it never blocks a
-    // tap on the markers beneath it.
+    // point at the dog. It includes an upright distance badge right at the arrow tip so the
+    // hunter can instantly see both direction and distance to the dog on the map.
     if (trackedDog && userLocation && !selectedHunterId) {
       const bearing = calculateBearing(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
+      const distToDog = calculateDistance(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
+      const distFormatted = formatDistance(distToDog);
       const arrowColor = trackedDog.color || '#f59e0b';
+      const isBarking = trackedDog.status === 'haukkuu' || (trackedDog.barkRate && trackedDog.barkRate > 0);
+
+      // Icon size [110, 110], anchor at center [55, 55].
+      // The arrow points in direction of bearing.
+      // Arrow tip is at top: 20px (35px from center).
+      // The distance badge is placed at top: 0px (55px from center, right in front of the arrow tip),
+      // and counter-rotated by -bearing degrees so it stays upright and readable at any angle.
       const arrowHtml = `
-        <div style="width:72px; height:72px; position:relative; pointer-events:none; background:transparent; border:none; transform:rotate(${bearing}deg); transform-origin:50% 50%;">
-          <div style="position:absolute; left:50%; top:2px; margin-left:-8px; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:16px solid ${arrowColor}; filter:drop-shadow(0 1px 1px rgba(0,0,0,0.55));"></div>
+        <div style="width:110px; height:110px; position:relative; pointer-events:none; background:transparent; border:none; transform:rotate(${bearing}deg); transform-origin:55px 55px;">
+          <!-- Arrow pointer pointing to the dog -->
+          <div style="position:absolute; left:55px; top:20px; margin-left:-8px; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:16px solid ${isBarking ? '#ef4444' : arrowColor}; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.6));"></div>
+
+          <!-- Distance pill counter-rotated so text remains upright and legible -->
+          <div style="position:absolute; left:55px; top:0px; transform:translate(-50%, 0) rotate(${-bearing}deg); transform-origin:center center; white-space:nowrap; z-index:10;">
+            <div style="display:inline-flex; align-items:center; gap:2px; padding:1px 5px; border-radius:9999px; background:rgba(28,25,23,0.92); border:1.5px solid ${isBarking ? '#ef4444' : arrowColor}; color:${isBarking ? '#fca5a5' : '#fef08a'}; font-size:9.5px; font-weight:900; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; box-shadow:0 2px 6px rgba(0,0,0,0.7); backdrop-filter:blur(4px);">
+              ${isBarking ? '<span>🔊</span>' : ''}
+              <span>${distFormatted}</span>
+            </div>
+          </div>
         </div>
       `;
       const arrowIcon = L.divIcon({
         html: arrowHtml,
         className: 'dog-bearing-arrow',
-        iconSize: [72, 72],
-        iconAnchor: [36, 36],
+        iconSize: [110, 110],
+        iconAnchor: [55, 55],
       });
       const userLatLng: [number, number] = [userLocation.lat, userLocation.lng];
 
@@ -1543,23 +1559,28 @@ export const MapContainer: React.FC<MapContainerProps> = ({
             </div>
 
             {/* Bottom Bar: Coordinates on the left, Active Dog/Target Telemetry on the right */}
-            <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
-              {/* Coordinates */}
+            <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between gap-1 sm:gap-2 pointer-events-none">
+              {/* Coordinates: compact on mobile screens so dog distance/telemetry has priority */}
               <div
-                className={`pointer-events-auto px-2 py-0.5 rounded-lg border shadow-lg text-[10px] sm:text-[11px] font-mono flex items-center space-x-1.5 backdrop-blur-md shrink-0 ${
+                className={`pointer-events-auto px-1.5 sm:px-2 py-0.5 rounded-lg border shadow-lg text-[9.5px] sm:text-[11px] font-mono flex items-center space-x-1 backdrop-blur-md shrink min-w-0 max-w-[105px] xs:max-w-[130px] sm:max-w-none truncate ${
                   isDarkMode
                     ? 'bg-stone-900/90 border-stone-800/80 text-stone-300'
                     : 'bg-stone-100/90 border-stone-300/80 text-stone-700'
                 }`}
               >
-                <div>
-                  <span className="text-amber-500 font-bold">WGS84: </span>
-                  {mouseCoords
-                    ? `${mouseCoords.lat.toFixed(5)}°, ${mouseCoords.lng.toFixed(5)}°`
-                    : (language === 'fi' ? 'Kartta aktiivinen' : 'Map active')}
+                <div className="truncate">
+                  <span className="text-amber-500 font-bold hidden sm:inline">WGS84: </span>
+                  {mouseCoords ? (
+                    <>
+                      <span className="hidden sm:inline">{mouseCoords.lat.toFixed(5)}°, {mouseCoords.lng.toFixed(5)}°</span>
+                      <span className="sm:hidden">{mouseCoords.lat.toFixed(4)}°, {mouseCoords.lng.toFixed(4)}°</span>
+                    </>
+                  ) : (
+                    language === 'fi' ? 'Kartta' : 'Map'
+                  )}
                 </div>
                 {mouseEtrs && (
-                  <div className="hidden md:block text-stone-400 border-l border-stone-700 pl-1.5">
+                  <div className="hidden md:block text-stone-400 border-l border-stone-700 pl-1.5 shrink-0">
                     <span>{mouseEtrs.text}</span>
                   </div>
                 )}
@@ -1579,7 +1600,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                     }
                   }}
                   title={language === 'fi' ? 'Klikkaa kohdistaaksesi kartta' : 'Click to center map'}
-                  className={`pointer-events-auto cursor-pointer px-2.5 py-0.5 rounded-lg border shadow-lg text-[10px] sm:text-[11px] font-mono flex items-center space-x-1.5 sm:space-x-2 backdrop-blur-md transition hover:scale-[1.01] whitespace-nowrap overflow-hidden ${
+                  className={`pointer-events-auto cursor-pointer px-2 sm:px-2.5 py-0.5 rounded-lg border shadow-lg text-[10px] sm:text-[11px] font-mono flex items-center gap-1 sm:gap-1.5 backdrop-blur-md transition hover:scale-[1.01] whitespace-nowrap shrink-0 ${
                     isDarkMode
                       ? 'bg-stone-900/90 border-amber-500/50 text-stone-200'
                       : 'bg-white/95 border-amber-500/60 text-stone-900'
@@ -1587,51 +1608,44 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                 >
                   {trackedHunter ? (
                     <>
-                      <span className="font-bold text-sky-400 flex items-center space-x-1">
+                      <span className="font-bold text-sky-400 flex items-center space-x-1 shrink-0">
                         <span>🎯</span>
-                        <span className="font-black">{trackedHunter.name}</span>
+                        <span className="font-black truncate max-w-[80px] sm:max-w-none">{trackedHunter.name}</span>
                       </span>
-                      <span className="text-stone-400">•</span>
-                      <span className="text-amber-400 font-black">
+                      {/* Distance FIRST */}
+                      <span className="text-amber-400 font-black shrink-0">
                         📍 {dist !== null ? formatDistance(dist) : '---'}
                       </span>
-                      <span className="text-stone-400 hidden sm:inline">•</span>
-                      <span className="text-emerald-400 hidden sm:inline">🔋 {trackedHunter.battery || 100}%</span>
+                      <span className="text-emerald-400 font-bold shrink-0">🔋 {trackedHunter.battery || 100}%</span>
                     </>
                   ) : trackedDog ? (
                     <>
                       {/* Dog Color Indicator */}
-                      <div className="flex items-center space-x-1" title={trackedDog.name}>
+                      <div className="flex items-center shrink-0" title={trackedDog.name}>
                         <span
                           className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/50 shadow-sm inline-block"
                           style={{ backgroundColor: trackedDog.color }}
                         />
                       </div>
 
-                      <span className="text-stone-400">•</span>
+                      {/* Distance FIRST - Prioritized and never clipped on mobile */}
+                      <span className="text-amber-400 font-black shrink-0">
+                        📍 {dist !== null ? formatDistance(dist) : '---'}
+                      </span>
 
                       {/* Speed / Barking / Standing Status */}
                       {trackedDog.status === 'haukkuu' ? (
-                        <span className="text-red-400 font-black animate-pulse">
+                        <span className="text-red-400 font-black animate-pulse shrink-0">
                           🔊 {trackedDog.barkRate || 0} /min
                         </span>
                       ) : trackedDog.status === 'seisoo' ? (
-                        <span className="text-amber-400 font-black">🛑 Seisoo</span>
+                        <span className="text-amber-400 font-black shrink-0">🛑 Seisoo</span>
                       ) : (
-                        <span className="text-sky-300 font-bold">🏃 {trackedDog.speed} km/h</span>
+                        <span className="text-sky-300 font-bold shrink-0">🏃 {trackedDog.speed} km/h</span>
                       )}
 
-                      <span className="text-stone-400">•</span>
-
-                      {/* Distance */}
-                      <span className="text-amber-400 font-black">
-                        📏 {dist !== null ? formatDistance(dist) : '---'}
-                      </span>
-
-                      <span className="text-stone-400">•</span>
-
-                      {/* Battery (Always visible on mobile) */}
-                      <span className="text-emerald-400 font-bold">🔋 {trackedDog.battery}%</span>
+                      {/* Battery */}
+                      <span className="text-emerald-400 font-bold shrink-0">🔋 {trackedDog.battery}%</span>
                     </>
                   ) : null}
                 </div>
