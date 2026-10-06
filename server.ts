@@ -558,6 +558,56 @@ async function pullHistoryFromTractive(token: string): Promise<GpsPointHistoryRe
 }
 
 // Reusable async helper to pull telemetry from Micro GPS Gateway or HTTP listener
+/**
+ * Parses a SinoTrack / JT808 ASCII position sentence as emitted by many 4G dog collars,
+ * e.g. `*HQ,7026216737,V8,144841,A,6044.1731,N,02545.2990,E,0.00,263,061026,...,99#`.
+ * These arrive inside the gateway's raw packet log (`/api/rawlogs`), not in its decoded
+ * `/api/positions` list - the gateway forwards them but does not turn them into a fix.
+ *
+ * Fields after the `*HQ,` header: id, type, time(HHMMSS), status, lat(ddmm.mmmm), N/S,
+ * lng(dddmm.mmmm), E/W, speed, heading, date(DDMMYY), ... The status is `A` for a valid
+ * fix and `V` for none. Coordinates are converted to decimal degrees.
+ */
+function parseSinoTrackSentence(
+  text: unknown
+): { id: string; lat: number; lng: number; speed: number; heading: number; valid: boolean } | null {
+  if (typeof text !== 'string') return null;
+  const s = text.trim();
+  if (!/^\*HQ,/i.test(s)) return null;
+  const f = s.slice(4).replace(/[#*]\s*$/, '').split(',');
+  if (f.length < 9) return null;
+  const id = (f[0] || '').trim();
+  const status = (f[3] || '').trim().toUpperCase();
+  const latRaw = parseFloat(f[4]);
+  const latDir = (f[5] || '').trim().toUpperCase();
+  const lngRaw = parseFloat(f[6]);
+  const lngDir = (f[7] || '').trim().toUpperCase();
+  if (!id || isNaN(latRaw) || isNaN(lngRaw)) return null;
+  const lat = Math.floor(latRaw / 100) + (latRaw % 100) / 60;
+  const lng = Math.floor(lngRaw / 100) + (lngRaw % 100) / 60;
+  return {
+    id,
+    lat: latDir === 'S' ? -lat : lat,
+    lng: lngDir === 'W' ? -lng : lng,
+    speed: parseFloat(f[8]) || 0,
+    heading: parseFloat(f[9]) || 0,
+    valid: status !== 'V',
+  };
+}
+
+/** Best-effort device id for a gateway list item, including ids embedded in a raw packet's text. */
+function extractGatewayItemId(item: any): string {
+  const direct =
+    item?.id ?? item?.imei ?? item?.ident ?? item?.uniqueId ?? item?.deviceId ??
+    item?.device_id ?? item?.tracker_id ?? item?.trackerId ?? item?.serialNumber ??
+    item?.serial ?? item?.device ?? item?.collarId;
+  if (direct !== undefined && direct !== null && String(direct).trim()) return String(direct).trim();
+  const sent = parseSinoTrackSentence(
+    item?.text ?? item?.raw ?? item?.sentence ?? item?.message ?? item?.payload
+  );
+  return sent ? sent.id : '';
+}
+
 async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promise<DirectGpsRecord | null> {
   try {
     const cleanId = String(deviceId || '').replace(/^ID[:\s]*/i, '').trim();
@@ -616,6 +666,9 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
       `${baseUrl}/api/device?id=${encodeURIComponent(cleanId)}`,
       `${baseUrl}/api/gps?id=${encodeURIComponent(cleanId)}`,
       `${baseUrl}/api/gps`,
+      // Raw packet log: some collars (e.g. SINOTRACK_ASCII) are forwarded by the gateway but
+      // never decoded into /api/positions, so the position must be parsed from these packets.
+      `${baseUrl}/api/rawlogs`,
       `${baseUrl}/`,
     ];
 
@@ -645,39 +698,38 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
             ? parsed.positions
             : Array.isArray(parsed.devices)
             ? parsed.devices
+            : Array.isArray(parsed.packets)
+            ? parsed.packets
             : Array.isArray(parsed.data)
             ? parsed.data
             : [];
 
           if (list.length > 0) {
             const cleanIdClean = cleanId.replace(/^0+/, '');
+            const matchesId = (d: any): boolean => {
+              const dId = extractGatewayItemId(d);
+              const dIdClean = dId.replace(/^0+/, '');
+              const dName = String(d.name || d.deviceName || '').trim().toLowerCase();
+              const targetName = cleanId.toLowerCase();
+              return (
+                dId === cleanId ||
+                (cleanIdClean && dIdClean === cleanIdClean) ||
+                (cleanId.length >= 4 && dId.endsWith(cleanId)) ||
+                (dId.length >= 4 && cleanId.endsWith(dId)) ||
+                (cleanId.length >= 5 && dId.includes(cleanId)) ||
+                (targetName.length >= 4 && dName.includes(targetName))
+              );
+            };
+            const packetTs = (d: any) => {
+              const t = Number(d?.timestamp ?? d?.lastSeen ?? 0);
+              return isFinite(t) ? t : 0;
+            };
+            // Newest matching packet wins: the raw log holds a burst of packets for the same
+            // collar, and we want the most recent fix rather than whatever is first in the list.
             const item = cleanId
-              ? list.find((d: any) => {
-                  const dId = String(
-                    d.id ||
-                      d.imei ||
-                      d.ident ||
-                      d.uniqueId ||
-                      d.deviceId ||
-                      d.device_id ||
-                      d.tracker_id ||
-                      d.trackerId ||
-                      d.serialNumber ||
-                      d.serial ||
-                      ''
-                  ).trim();
-                  const dIdClean = dId.replace(/^0+/, '');
-                  const dName = String(d.name || d.deviceName || '').trim().toLowerCase();
-                  const targetName = cleanId.toLowerCase();
-                  return (
-                    dId === cleanId ||
-                    (cleanIdClean && dIdClean === cleanIdClean) ||
-                    (cleanId.length >= 4 && dId.endsWith(cleanId)) ||
-                    (dId.length >= 4 && cleanId.endsWith(dId)) ||
-                    (cleanId.length >= 5 && dId.includes(cleanId)) ||
-                    (targetName.length >= 4 && dName.includes(targetName))
-                  );
-                })
+              ? list
+                  .filter(matchesId)
+                  .reduce<any>((best, cur) => (!best || packetTs(cur) >= packetTs(best) ? cur : best), undefined)
               : list[0];
 
             // There used to be a `|| (list.length === 1 ? list[0] : undefined)` here. When
@@ -688,15 +740,21 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
             // when the id does not match; showing another collar's position is not.
 
             if (item) {
+              const sent = parseSinoTrackSentence(
+                item.text ?? item.raw ?? item.sentence ?? item.message ?? item.payload
+              );
+              const sentLat = sent && sent.valid ? sent.lat : undefined;
+              const sentLng = sent && sent.valid ? sent.lng : undefined;
               const rawLat =
-                item.lat ?? item.latitude ?? item.attributes?.latitude ?? item.attributes?.lat;
+                item.lat ?? item.latitude ?? item.attributes?.latitude ?? item.attributes?.lat ?? sentLat;
               const rawLng =
                 item.lng ??
                 item.lon ??
                 item.longitude ??
                 item.attributes?.longitude ??
                 item.attributes?.lng ??
-                item.attributes?.lon;
+                item.attributes?.lon ??
+                sentLng;
 
               let latVal =
                 typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat || ''));
@@ -718,7 +776,7 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                 foundLat = latVal;
                 foundLng = lngVal;
                 foundSpeed =
-                  Number(item.speed ?? item.spd ?? item.attributes?.speed ?? 0) || 0;
+                  Number(item.speed ?? item.spd ?? item.attributes?.speed ?? sent?.speed ?? 0) || 0;
                 foundBattery = parseBattery(
                   item.battery ??
                     item.batt ??
@@ -733,6 +791,7 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                       item.bearing ??
                       item.course ??
                       item.attributes?.course ??
+                      sent?.heading ??
                       0
                   ) || 0;
                 foundTimestamp = normalizeTimestampMs(
@@ -760,9 +819,9 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
                     (foundBattery ? 3.5 + (foundBattery / 100) * 0.7 : 4.12)
                 );
                 foundHdop = Number(item.hdop ?? item.attributes?.hdop ?? 0.9);
-                foundRaw = JSON.stringify(item);
-                if (item.id || item.imei || item.uniqueId)
-                  foundId = String(item.id || item.imei || item.uniqueId);
+                foundRaw = sent ? String(item.text ?? JSON.stringify(item)) : JSON.stringify(item);
+                if (item.id || item.imei || item.uniqueId || sent)
+                  foundId = String(item.id || item.imei || item.uniqueId || (sent ? sent.id : ''));
                 if (item.protocol) foundProtocol = String(item.protocol);
               }
             }
@@ -1039,6 +1098,8 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
         `${baseUrl}/api/positions?id=${encodeURIComponent(cleanId)}&since=${since || 0}&limit=5000`,
         rawUrl.includes('/api/positions') ? rawUrl : `${baseUrl}/api/positions`,
         `${baseUrl}/api/tracks?id=${encodeURIComponent(cleanId)}&since=${since || 0}`,
+        // Raw packet log for collars the gateway forwards but never decodes (e.g. SINOTRACK_ASCII).
+        `${baseUrl}/api/rawlogs`,
       ];
 
       let foundPoints: GpsPointHistoryRecord[] = [];
@@ -1053,28 +1114,41 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
 
           if (resp.ok) {
             const json: any = await resp.json();
+            // The gateway's path-form history (`/api/history/<id>`) ignores the id and answers
+            // with its default device, so trust the top-level deviceId and skip mismatches
+            // instead of drawing another collar's track.
+            const respDeviceId = json && json.deviceId ? String(json.deviceId).trim() : '';
+            if (respDeviceId) {
+              const rClean = respDeviceId.replace(/^0+/, '');
+              const cClean = cleanId.replace(/^0+/, '');
+              const idOk =
+                respDeviceId === cleanId ||
+                (cClean && rClean === cClean) ||
+                (cleanId.length >= 4 && respDeviceId.endsWith(cleanId)) ||
+                (respDeviceId.length >= 4 && cleanId.endsWith(respDeviceId));
+              if (!idOk) continue;
+            }
             const list: any[] = Array.isArray(json)
               ? json
-              : (Array.isArray(json.points) ? json.points : (Array.isArray(json.positions) ? json.positions : (Array.isArray(json.data) ? json.data : [])));
+              : Array.isArray(json.points)
+              ? json.points
+              : Array.isArray(json.positions)
+              ? json.positions
+              : Array.isArray(json.packets)
+              ? json.packets
+              : Array.isArray(json.data)
+              ? json.data
+              : [];
 
             if (list.length > 0) {
               let lastKnownValidLat: number | null = null;
               let lastKnownValidLng: number | null = null;
               for (const item of list) {
+                const sent = parseSinoTrackSentence(
+                  item.text ?? item.raw ?? item.sentence ?? item.message ?? item.payload
+                );
                 // Filter out points belonging to other devices if identifier is present
-                const itemDeviceId = String(
-                  item.id ||
-                    item.deviceId ||
-                    item.device_id ||
-                    item.imei ||
-                    item.uniqueId ||
-                    item.ident ||
-                    item.tracker_id ||
-                    item.trackerId ||
-                    item.device ||
-                    item.collarId ||
-                    ''
-                ).trim();
+                const itemDeviceId = extractGatewayItemId(item);
                 if (itemDeviceId) {
                   const dClean = itemDeviceId.replace(/^0+/, '');
                   const cClean = cleanId.replace(/^0+/, '');
@@ -1088,14 +1162,19 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
                 }
 
                 const rawLat =
-                  item.lat ?? item.latitude ?? item.attributes?.latitude ?? item.attributes?.lat;
+                  item.lat ??
+                  item.latitude ??
+                  item.attributes?.latitude ??
+                  item.attributes?.lat ??
+                  (sent && sent.valid ? sent.lat : undefined);
                 const rawLng =
                   item.lng ??
                   item.lon ??
                   item.longitude ??
                   item.attributes?.longitude ??
                   item.attributes?.lng ??
-                  item.attributes?.lon;
+                  item.attributes?.lon ??
+                  (sent && sent.valid ? sent.lng : undefined);
 
                 let latVal =
                   typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat || ''));
@@ -1119,7 +1198,7 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
                   const pt: GpsPointHistoryRecord = {
                     lat: latVal,
                     lng: lngVal,
-                    speed: Number(item.speed ?? item.spd ?? item.attributes?.speed ?? 0) || 0,
+                    speed: Number(item.speed ?? item.spd ?? item.attributes?.speed ?? sent?.speed ?? 0) || 0,
                     battery: parseBattery(
                       item.battery ??
                         item.batt ??
@@ -1134,6 +1213,7 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
                           item.bearing ??
                           item.course ??
                           item.attributes?.course ??
+                          sent?.heading ??
                           0
                       ) || 0,
                     barkRate: bark > 0 ? bark : (isBark ? 15 : 0),
