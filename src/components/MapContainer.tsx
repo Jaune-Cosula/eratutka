@@ -36,6 +36,13 @@ function extendBoundsSafely(bounds: L.LatLngBounds, lat: unknown, lng: unknown):
  */
 const BARK_TRACK_COLOR = '#dc2626';
 
+/**
+ * Radii (metres) for the Mittari distance rings. 150 m is Finland's minimum hunting distance
+ * from an inhabited building, so that ring is drawn emphasised (red, dashed).
+ */
+const RING_RADII = [50, 100, 150, 500, 1000, 2000];
+const RING_LIMIT_M = 150;
+
 interface MapContainerProps {
   mapLayer: MapLayerType;
   setMapLayer: (layer: MapLayerType) => void;
@@ -51,6 +58,10 @@ interface MapContainerProps {
   isDarkMode: boolean;
   onMapClick: (lat: number, lng: number) => void;
   activeRulerPoint: { lat: number; lng: number; title: string } | null;
+  /** Mittari tool active: show the distance rings and the tap-to-measure legend. */
+  rulerActive: boolean;
+  /** Clears the measured point, returning the rings to the hunter's own GPS position. */
+  onClearRulerPoint: () => void;
   showSafetySectors?: boolean;
   setShowSafetySectors?: (val: boolean) => void;
   showDogTracks: boolean;
@@ -81,6 +92,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   isDarkMode,
   onMapClick,
   activeRulerPoint,
+  rulerActive,
+  onClearRulerPoint,
   showSafetySectors,
   setShowSafetySectors,
   showDogTracks,
@@ -114,6 +127,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const zonePolygonsRef = useRef<Map<string, L.Polygon>>(new Map());
   const rulerPolylineRef = useRef<L.Polyline | null>(null);
   const rulerBadgeRef = useRef<L.Marker | null>(null);
+  // Mittari distance rings, keyed by radius so a GPS tick moves them instead of rebuilding.
+  const rulerRingsRef = useRef<Map<number, { circle: L.Circle; label: L.Marker }>>(new Map());
 
   const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState<boolean>(false);
@@ -237,6 +252,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       userCircleRef.current = null;
       rulerPolylineRef.current = null;
       rulerBadgeRef.current = null;
+      rulerRingsRef.current.clear();
       hunterPolylineRef.current = null;
       dogBearingArrowRef.current = null;
       map.remove();
@@ -1236,10 +1252,103 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
   const mouseEtrs = mouseCoords ? wgs84ToEtrsTm35Fin(mouseCoords.lat, mouseCoords.lng) : null;
 
+  // Mittari distance rings: thin circles around the hunter (or the tapped point), with the
+  // 150 m building-distance limit emphasised. Held in a ref map so a GPS tick only moves them.
+  useEffect(() => {
+    const layerGroup = layerGroupRef.current;
+    if (!layerGroup) return;
+    const rings = rulerRingsRef.current;
+
+    const centre = activeRulerPoint ?? (userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : null);
+
+    if (!rulerActive || !centre) {
+      rings.forEach(({ circle, label }) => {
+        layerGroup.removeLayer(circle);
+        layerGroup.removeLayer(label);
+      });
+      rings.clear();
+      return;
+    }
+
+    const centreLatLng: [number, number] = [centre.lat, centre.lng];
+
+    RING_RADII.forEach((radius) => {
+      const isLimit = radius === RING_LIMIT_M;
+      const color = isLimit ? '#dc2626' : '#f59e0b';
+      const northLatLng: [number, number] = [centre.lat + radius / 111320, centre.lng];
+
+      const existing = rings.get(radius);
+      if (existing) {
+        existing.circle.setLatLng(centreLatLng);
+        existing.label.setLatLng(northLatLng);
+        return;
+      }
+
+      const circle = L.circle(centreLatLng, {
+        radius,
+        color,
+        weight: isLimit ? 2 : 1,
+        opacity: isLimit ? 0.9 : 0.5,
+        fill: false,
+        dashArray: isLimit ? '6,6' : undefined,
+        interactive: false,
+      }).addTo(layerGroup);
+
+      const labelHtml = `<div style="color:${color};font-size:${isLimit ? 10 : 9}px;font-weight:${isLimit ? 800 : 600};font-family:ui-monospace,Menlo,monospace;text-shadow:0 1px 2px rgba(0,0,0,0.85);">${formatDistance(radius)}${isLimit ? ' ⚠' : ''}</div>`;
+      const label = L.marker(northLatLng, {
+        icon: L.divIcon({ html: labelHtml, className: 'ruler-ring-label', iconSize: [60, 14], iconAnchor: [30, 7] }),
+        interactive: false,
+      }).addTo(layerGroup);
+
+      rings.set(radius, { circle, label });
+    });
+  }, [rulerActive, activeRulerPoint, userLocation]);
+
   return (
     <div className="relative w-full h-full overflow-hidden select-none touch-none">
       {/* The Leaflet Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0 bg-stone-900 select-none touch-none" />
+
+      {/* Mittari legend: ring radii, the 150 m building limit, and the current measurement */}
+      {rulerActive && (
+        <div
+          className={`absolute top-3 right-3 z-30 w-44 rounded-2xl border shadow-2xl backdrop-blur-md p-3 text-[11px] space-y-1.5 ${
+            isDarkMode ? 'bg-stone-900/95 border-stone-700 text-stone-200' : 'bg-white/95 border-stone-300 text-stone-800'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-black uppercase tracking-wide text-amber-400">
+              📏 {language === 'fi' ? 'Etäisyysrenkaat' : 'Distance rings'}
+            </span>
+            {activeRulerPoint && (
+              <button
+                onClick={onClearRulerPoint}
+                className="text-stone-400 hover:text-red-400 font-bold px-1"
+                title={language === 'fi' ? 'Palauta omaan sijaintiin' : 'Reset to my location'}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <ul className="space-y-0.5 font-mono">
+            {RING_RADII.map((r) => (
+              <li key={r} className={r === RING_LIMIT_M ? 'text-red-400 font-black' : 'text-stone-400'}>
+                {formatDistance(r)}
+                {r === RING_LIMIT_M ? (language === 'fi' ? ' — rakennusraja ⚠' : ' — building limit ⚠') : ''}
+              </li>
+            ))}
+          </ul>
+          <div className="pt-0.5 text-[10px] text-stone-400 leading-snug">
+            {activeRulerPoint && userLocation
+              ? `${language === 'fi' ? 'Etäisyys' : 'Distance'}: ${formatDistance(
+                  calculateDistance(userLocation.lat, userLocation.lng, activeRulerPoint.lat, activeRulerPoint.lng)
+                )}`
+              : language === 'fi'
+              ? 'Napauta karttaa siirtääksesi renkaat'
+              : 'Tap the map to move the rings'}
+          </div>
+        </div>
+      )}
 
       {/* Unified Karttavalikko Button & Dropdown Drawer */}
       <div className="absolute top-3 left-3 z-20">

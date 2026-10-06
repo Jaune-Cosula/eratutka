@@ -17,7 +17,6 @@ import { MapContainer } from './components/MapContainer';
 import { DogRadarPanel } from './components/DogRadarPanel';
 import { TeamPanel } from './components/TeamPanel';
 import { AnnotationsPanel } from './components/AnnotationsPanel';
-import { RulerPanel } from './components/RulerPanel';
 import { SosModal } from './components/SosModal';
 import { AddDogModal } from './components/AddDogModal';
 import { AddAnnotationModal } from './components/AddAnnotationModal';
@@ -317,6 +316,12 @@ export default function App() {
   const [showHunterNames, setShowHunterNames] = useState<boolean>(true);
   const [activeRulerPoint, setActiveRulerPoint] = useState<{ lat: number; lng: number; title: string } | null>(null);
   const [mapFocusTarget, setMapFocusTarget] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Entering Mittari clears any previously focused point, so the distance rings start centred on
+  // the hunter's own GPS position instead of a stale annotation focus carried over from another tab.
+  useEffect(() => {
+    if (activeTab === 'ruler') setActiveRulerPoint(null);
+  }, [activeTab]);
 
   // Dogs hidden from this hunter's own map. Deliberately personal and per hunt: the choice
   // never syncs to the party (another hunter may be relying on seeing that collar), and a
@@ -691,6 +696,11 @@ export default function App() {
     if (isPickingAnnotationLocation) {
       setIsPickingAnnotationLocation(false);
       setShowAddAnnotationModal(true);
+      return;
+    }
+    // In the Mittari tool a map tap moves the distance rings to the tapped point.
+    if (activeTab === 'ruler') {
+      setActiveRulerPoint({ lat, lng, title: 'Mittaus' });
     }
   };
 
@@ -1113,7 +1123,7 @@ export default function App() {
 
       {/* Main View Area */}
       <main className="flex-1 relative overflow-hidden pb-[54px] md:pb-0">
-        {activeTab === 'map' && (
+        {(activeTab === 'map' || activeTab === 'ruler') && (
           <MapContainer
             mapLayer={mapLayer}
             setMapLayer={setMapLayer}
@@ -1130,6 +1140,8 @@ export default function App() {
             isDarkMode={isDarkMode}
             onMapClick={handleMapClick}
             activeRulerPoint={activeRulerPoint}
+            rulerActive={activeTab === 'ruler'}
+            onClearRulerPoint={() => setActiveRulerPoint(null)}
             showSafetySectors={showSafetySectors}
             setShowSafetySectors={setShowSafetySectors}
             showDogTracks={showDogTracks}
@@ -1202,17 +1214,6 @@ export default function App() {
             isDarkMode={isDarkMode}
             onImportMapData={() => setShowImportMapDataModal(true)}
             onExportGpx={handleExportGpx}
-          />
-        )}
-
-        {activeTab === 'ruler' && (
-          <RulerPanel
-            userLocation={userLocation}
-            dogs={dogs}
-            annotations={annotations}
-            activeRulerPoint={activeRulerPoint}
-            setActiveRulerPoint={setActiveRulerPoint}
-            isDarkMode={isDarkMode}
           />
         )}
       </main>
