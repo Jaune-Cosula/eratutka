@@ -75,6 +75,13 @@ interface MapContainerProps {
   myNickname?: string;
   /** Dogs the hunter has hidden from their own map. Personal and per hunt. */
   hiddenDogIds?: string[];
+  /**
+   * 'evo' renders the exact same Leaflet map and overlays but without the classic
+   * chrome (Mittari legend, Karttavalikko drawer, MML modal, coordinate footer), so the
+   * Evo UI can lay its own chrome over it. Drawing is identical in both variants —
+   * only these JSX blocks are hidden.
+   */
+  variant?: 'classic' | 'evo';
 }
 
 export const MapContainer: React.FC<MapContainerProps> = ({
@@ -105,6 +112,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   mapFocusTarget,
   myNickname,
   hiddenDogIds = [],
+  variant = 'classic',
 }) => {
   const { language } = useLanguage();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -1309,6 +1317,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       {/* The Leaflet Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0 bg-stone-900 select-none touch-none" />
 
+      {/* Classic chrome — hidden in the Evo variant, which draws its own. */}
+      {variant !== 'evo' && (<>
+
       {/* Mittari legend: ring radii, the 150 m building limit, and the current measurement */}
       {rulerActive && (
         <div
@@ -1956,6 +1967,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 };

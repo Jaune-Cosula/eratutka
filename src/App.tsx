@@ -66,6 +66,10 @@ import { UserAuthModal } from './components/UserAuthModal';
 import { VersionUpdateChecker } from './components/VersionUpdateChecker';
 import { useSyncedSetting } from './hooks/useSyncedSetting';
 import { reconcileOnLogin, setSettingsUid } from './services/settingsService';
+// Evo: a second front-end ("Kenttäinstrumentti") over the same engine. See src/evo/.
+import { useUiMode } from './evo/useUiMode';
+import { EvoApp } from './evo/EvoApp';
+import { EvoProps } from './evo/core';
 
 /**
  * Makes the joining hunter's nickname unique inside the hunt.
@@ -91,6 +95,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'team' | 'annotations' | 'ruler'>('map');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [mapLayer, setMapLayer] = useSyncedSetting('mapLayer');
+  // Which front-end to render: the classic UI or the Evo redesign. Device-local test flag.
+  const [uiMode, setUiMode] = useUiMode();
 
   // User Account & Cloud Sync State
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -1087,15 +1093,77 @@ export default function App() {
     setShowSessionAuthModal(true);
   };
 
+  // Everything the Evo UI needs. Hooks stay here in App (Evo never calls a data hook of
+  // its own), so collars are polled and Firestore is written exactly once regardless of mode.
+  const evoProps: EvoProps = {
+    setUiMode,
+    currentSession,
+    currentUser,
+    userProfile,
+    userLocation,
+    isGpsTracking,
+    toggleGps,
+    mapLayer,
+    setMapLayer,
+    dogs,
+    visibleDogs,
+    hiddenDogIds,
+    selectedDogId,
+    setSelectedDogId,
+    dogLibrary,
+    isMyDog,
+    team,
+    selectedHunterId,
+    setSelectedHunterId,
+    radioMessages,
+    unreadRadioCount,
+    annotations,
+    safetySectors,
+    setSafetySectors,
+    mapFocusTarget,
+    setMapFocusTarget,
+    activeRulerPoint,
+    setActiveRulerPoint,
+    showDogTracks,
+    setShowDogTracks,
+    showHunterNames,
+    setShowHunterNames,
+    showSafetySectors,
+    setShowSafetySectors,
+    onToggleDogVisibility: handleToggleDogVisibility,
+    onUnshareDog: handleUnshareDog,
+    onShareLibraryDog: handleShareLibraryDog,
+    onDeleteDog: handleDeleteDog,
+    onToggleDogAlert: handleToggleDogAlert,
+    onSendMessage: handleSendMessage,
+    onUpdateMemberStatus: handleUpdateMemberStatus,
+    onDeleteHunter: handleDeleteHunter,
+    onDeleteAnnotation: handleDeleteAnnotation,
+    onMapClick: handleMapClick,
+    onExportGpx: handleExportGpx,
+    onLeaveSession: handleLeaveSession,
+    openAddDog: () => setShowAddDogModal(true),
+    openAddAnnotation: () => setShowAddAnnotationModal(true),
+    openImportMapData: () => setShowImportMapDataModal(true),
+    openSos: () => setShowSosModal(true),
+    openSessionAuth: () => setShowSessionAuthModal(true),
+    openShare: () => setShowShareModal(true),
+    openUserAuth: () => setShowUserAuthModal(true),
+  };
+
   return (
+    <>
+    {/* Live Version Checker & Auto-Updater (shared by both UIs) */}
+    <VersionUpdateChecker />
+
+    {uiMode === 'evo' ? (
+      <EvoApp p={evoProps} />
+    ) : (
     <div
       className={`h-screen h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans transition-colors duration-200 overflow-hidden ${
         isDarkMode ? 'bg-stone-950 text-stone-100' : 'bg-stone-100 text-stone-900'
       }`}
     >
-      {/* Live Version Checker & Auto-Updater */}
-      <VersionUpdateChecker />
-
       {/* Top Header */}
       <Header
         activeTab={activeTab}
@@ -1218,7 +1286,21 @@ export default function App() {
         )}
       </main>
 
-      {/* Modals */}
+      {/* Mobile Bottom Navigation Bar (classic UI only) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        activeDogCount={visibleDogs.filter((d) => d.isActive).length}
+        teamCount={team.length}
+        unreadRadioCount={unreadRadioCount}
+        isDarkMode={isDarkMode}
+        onAddDog={() => setShowAddDogModal(true)}
+        onAddAnnotation={() => setShowAddAnnotationModal(true)}
+      />
+    </div>
+    )}
+
+      {/* Modals (shared by both UIs) */}
       {showSessionAuthModal && (
         <HuntAuthModal
           onSessionCreatedOrJoined={handleSessionCreatedOrJoined}
@@ -1336,18 +1418,6 @@ export default function App() {
         savedDogsCount={dogs.length}
         savedMarkersCount={annotations.length}
       />
-
-      {/* Mobile Bottom Navigation Bar (Always accessible on mobile) */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        activeDogCount={visibleDogs.filter((d) => d.isActive).length}
-        teamCount={team.length}
-        unreadRadioCount={unreadRadioCount}
-        isDarkMode={isDarkMode}
-        onAddDog={() => setShowAddDogModal(true)}
-        onAddAnnotation={() => setShowAddAnnotationModal(true)}
-      />
-    </div>
+    </>
   );
 }
