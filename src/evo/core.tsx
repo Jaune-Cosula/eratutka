@@ -29,6 +29,7 @@ export const fi = {
   live: 'Live', noHunt: 'Ei jahtia',
   members: 'Jäsenet', radio: 'Radio', send: 'Lähetä', sos: 'SOS', share: 'Jaa',
   addDog: 'Lisää panta', addMark: 'Lisää merkintä',
+  importData: 'Tuo karttadata', exportGpx: 'Vie GPX',
   cancel: 'Peruuta', save: 'Tallenna', remove: 'Poista', close: 'Sulje',
 
   buildingLimit: '150 m rakennusraja', radar: 'Tutka', radarRange: 'Tutka · 900 m',
@@ -76,6 +77,7 @@ export const en: EvoStrings = {
   live: 'Live', noHunt: 'No hunt',
   members: 'Members', radio: 'Radio', send: 'Send', sos: 'SOS', share: 'Share',
   addDog: 'Add collar', addMark: 'Add marker',
+  importData: 'Import map data', exportGpx: 'Export GPX',
   cancel: 'Cancel', save: 'Save', remove: 'Remove', close: 'Close',
 
   buildingLimit: '150 m building limit', radar: 'Radar', radarRange: 'Radar · 900 m',

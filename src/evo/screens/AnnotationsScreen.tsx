@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, MapPin, Trash2 } from 'lucide-react';
+import { Plus, MapPin, Trash2, Upload, Download } from 'lucide-react';
 import { MapAnnotation } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, catLabel, catColor, fmtClock, Sheet, Btn } from '../core';
 
@@ -16,6 +16,13 @@ export const AnnotationsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, n
         </div>
         <Btn variant="primary" sm onClick={p.openAddAnnotation}><Plus className="h-4 w-4" />{s.addMark}</Btn>
       </header>
+
+      {/* Club boundaries, parcels and other geodata come in here (GPX/GeoJSON), matching
+          the classic UI's import. Export is the way back out. */}
+      <div className="flex gap-2 px-4 pb-1">
+        <Btn sm className="flex-1" onClick={p.openImportMapData}><Upload className="h-4 w-4" />{s.importData}</Btn>
+        <Btn sm className="flex-1" onClick={p.onExportGpx}><Download className="h-4 w-4" />{s.exportGpx}</Btn>
+      </div>
 
       <div className="space-y-2.5 px-4">
         {p.annotations.length === 0 && (
