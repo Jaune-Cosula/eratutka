@@ -295,6 +295,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           maxNativeZoom: 18,
           maxZoom: 22,
           opacity: 0.85,
+          // Above the base map: this layer is added before the tile effect on mount, so
+          // without an explicit z-index the base map would stack on top and hide it.
+          zIndex: 2,
         });
 
         propLayer.on('tileerror', () => {
@@ -306,20 +309,42 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         propLayer.addTo(mapRef.current);
         propertyLayerRef.current = propLayer;
       } else {
-        // Default: Kapsi Kiinteistörajat WMS transparent layer (no key required!)
-        const propLayer = L.tileLayer.wms('/api/map/kapsi/kiinteistorajat?', {
-          layers: 'kiinteistorajat',
-          format: 'image/png',
-          transparent: true,
-          version: '1.1.1',
+        // Default: Kapsi's MML property-boundary WMS (no key required).
+        //
+        // Kapsi renders this layer only in EPSG:3067 — the very same request in the map's
+        // own CRS (EPSG:3857) comes back as a blank tile, which is why the boundaries never
+        // appeared. Leaflet's WMS helper cannot ask for another CRS, so each tile's WGS84
+        // bounds are converted to ETRS-TM35FIN here (the project's own converter) and the
+        // WMS is requested in 3067 directly. Kapsi's WMS accepts that CRS.
+        const kapsiMap = mapRef.current;
+        const propLayer = L.tileLayer('', {
           attribution: '&copy; MML Kiinteistörajat (Kapsi.fi)',
           minZoom: 10,
           maxNativeZoom: 18,
           maxZoom: 22,
           opacity: 0.85,
+          // Above the base map — see the custom-key branch for why this is needed.
+          zIndex: 2,
         });
 
-        propLayer.addTo(mapRef.current);
+        (propLayer as any).getTileUrl = (coords: any): string => {
+          const nw = kapsiMap.unproject([coords.x * 256, coords.y * 256], coords.z);
+          const se = kapsiMap.unproject([(coords.x + 1) * 256, (coords.y + 1) * 256], coords.z);
+          const pts = [
+            wgs84ToEtrsTm35Fin(nw.lat, nw.lng),
+            wgs84ToEtrsTm35Fin(nw.lat, se.lng),
+            wgs84ToEtrsTm35Fin(se.lat, nw.lng),
+            wgs84ToEtrsTm35Fin(se.lat, se.lng),
+          ];
+          const minE = Math.min(pts[0].e, pts[1].e, pts[2].e, pts[3].e);
+          const maxE = Math.max(pts[0].e, pts[1].e, pts[2].e, pts[3].e);
+          const minN = Math.min(pts[0].n, pts[1].n, pts[2].n, pts[3].n);
+          const maxN = Math.max(pts[0].n, pts[1].n, pts[2].n, pts[3].n);
+          const bbox = `${minE.toFixed(2)},${minN.toFixed(2)},${maxE.toFixed(2)},${maxN.toFixed(2)}`;
+          return `/api/map/kapsi/kiinteistorajat?service=WMS&version=1.1.1&request=GetMap&layers=kiinteistorekisteri&styles=&format=image/png&transparent=true&width=256&height=256&srs=EPSG:3067&bbox=${bbox}`;
+        };
+
+        propLayer.addTo(kapsiMap);
         propertyLayerRef.current = propLayer;
       }
     }
