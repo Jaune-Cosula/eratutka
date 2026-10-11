@@ -22,6 +22,7 @@ import { AddDogModal } from './components/AddDogModal';
 import { AddAnnotationModal } from './components/AddAnnotationModal';
 import { ImportMapDataModal } from './components/ImportMapDataModal';
 import { HuntAuthModal } from './components/HuntAuthModal';
+import { InAppBrowserNotice } from './components/InAppBrowserNotice';
 import { ShareSessionModal } from './components/ShareSessionModal';
 import { useUserLocation } from './hooks/useUserLocation';
 import { useDogTracker } from './hooks/useDogTracker';
@@ -1161,6 +1162,10 @@ export default function App() {
     <>
     {/* Live Version Checker & Auto-Updater (shared by both UIs) */}
     <VersionUpdateChecker />
+
+    {/* Warns when the app is running inside an in-app browser (WhatsApp etc.) that
+        cannot grant geolocation, and offers a way out to a real browser. */}
+    <InAppBrowserNotice />
 
     {uiMode === 'evo' ? (
       <EvoApp p={evoProps} />
