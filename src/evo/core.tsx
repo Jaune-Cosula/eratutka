@@ -43,6 +43,7 @@ export const fi = {
   showOnMap: 'Näytä kartalla', hideOnMap: 'Piilota kartalta', hidden: 'Piilotettu', shareInHunt: 'Jaa jahdissa',
   myDog: 'Oma panta', telemetry: 'Telemetria', track: 'Reitti', diagnostics: 'Diagnostiikka',
   refreshNow: 'Päivitä heti', refreshing: 'Päivitetään…', callCollar: 'Soita pantaan', collarConnection: 'Pannan GPS-yhteys',
+  stopTracking: 'Lopeta seuranta', theme: 'Teema',
   visibility: 'Näkyvyys', dogTracks: 'Koirien reitit', hunterNames: 'Passimiesten nimet', safetySectors: 'Turvasektorit',
 
   teamTitle: 'Jahtiporukka', owner: 'Jahtimestari', role: 'Rooli',
@@ -93,6 +94,7 @@ export const en: EvoStrings = {
   showOnMap: 'Show on map', hideOnMap: 'Hide from map', hidden: 'Hidden', shareInHunt: 'Share in hunt',
   myDog: 'My collar', telemetry: 'Telemetry', track: 'Track', diagnostics: 'Diagnostics',
   refreshNow: 'Refresh now', refreshing: 'Refreshing…', callCollar: 'Call collar', collarConnection: 'Collar GPS',
+  stopTracking: 'Stop tracking', theme: 'Theme',
   visibility: 'Visibility', dogTracks: 'Dog tracks', hunterNames: 'Hunter names', safetySectors: 'Safety sectors',
 
   teamTitle: 'Hunting party', owner: 'Hunt master', role: 'Role',
@@ -270,6 +272,9 @@ export interface EvoNav {
 
 export interface EvoProps {
   setUiMode: (mode: UiMode) => void;
+
+  isDarkMode: boolean;
+  setIsDarkMode: (v: boolean) => void;
 
   currentSession: HuntSession | null;
   currentUser: FirebaseUser | null;

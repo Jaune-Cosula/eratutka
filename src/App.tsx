@@ -1101,6 +1101,8 @@ export default function App() {
   // its own), so collars are polled and Firestore is written exactly once regardless of mode.
   const evoProps: EvoProps = {
     setUiMode,
+    isDarkMode,
+    setIsDarkMode,
     currentSession,
     currentUser,
     userProfile,

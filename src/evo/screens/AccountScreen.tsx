@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, LogIn, ChevronRight, Layers, MapPin, RotateCcw } from 'lucide-react';
+import { User, LogIn, ChevronRight, Layers, MapPin, RotateCcw, SunMoon } from 'lucide-react';
 import { EvoProps, EvoNav, useEvo, Btn, Seg } from '../core';
 import { useSyncedSetting } from '../../hooks/useSyncedSetting';
 import { useLanguage } from '../../context/LanguageContext';
@@ -52,6 +52,11 @@ export const AccountScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }
             <div style={{ width: 120 }}>
               <Seg value={language} onChange={setLanguage} options={[{ v: 'fi', label: 'FI' }, { v: 'en', label: 'EN' }]} />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="flex items-center gap-2 font-bold"><SunMoon className="h-4 w-4" style={{ color: 'var(--e-signal)' }} />{s.theme}</span>
+            <button className={'evo-switch' + (p.isDarkMode ? ' on' : '')} onClick={() => p.setIsDarkMode(!p.isDarkMode)} aria-label={s.theme} />
           </div>
 
           <label className="flex items-center justify-between gap-3 px-4 py-3">

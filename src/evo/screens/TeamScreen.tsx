@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Users, Radio as RadioIcon, Send, Trash2, Crown } from 'lucide-react';
+import { Users, Radio as RadioIcon, Send, Trash2, Crown, Crosshair } from 'lucide-react';
 import { TeamMember, HunterStatus } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, roleLabel, hunterStatusLabel, fmtClock, Sheet, Btn, Seg } from '../core';
 
-export const TeamScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
+export const TeamScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) => {
   const { s } = useEvo();
   const [seg, setSeg] = useState<'members' | 'radio'>('members');
   const [member, setMember] = useState<TeamMember | null>(null);
@@ -58,14 +58,14 @@ export const TeamScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
 
       {member && (
         <Sheet title={member.name} onClose={() => setMember(null)}>
-          <MemberDetail member={member} p={p} onClose={() => setMember(null)} />
+          <MemberDetail member={member} p={p} nav={nav} onClose={() => setMember(null)} />
         </Sheet>
       )}
     </section>
   );
 };
 
-const MemberDetail: React.FC<{ member: TeamMember; p: EvoProps; onClose: () => void }> = ({ member, p, onClose }) => {
+const MemberDetail: React.FC<{ member: TeamMember; p: EvoProps; nav: EvoNav; onClose: () => void }> = ({ member, p, nav, onClose }) => {
   const { s } = useEvo();
   const statuses: HunterStatus[] = ['passissa', 'liikkeella', 'kaato', 'tauolla'];
   const canManage = Boolean(p.currentSession?.isJahtimestari);
@@ -89,6 +89,10 @@ const MemberDetail: React.FC<{ member: TeamMember; p: EvoProps; onClose: () => v
           </div>
         ))}
       </div>
+      <Btn block onClick={() => { p.setSelectedHunterId?.(member.id); p.setMapFocusTarget({ lat: member.lat, lng: member.lng }); nav.goMap(); onClose(); }}>
+        <Crosshair className="h-4 w-4" />{s.showOnMap}
+      </Btn>
+
       {canManage && (
         <Btn variant="danger" block onClick={() => { p.onDeleteHunter(member.id); onClose(); }}><Trash2 className="h-4 w-4" />{s.remove}</Btn>
       )}
@@ -99,7 +103,7 @@ const MemberDetail: React.FC<{ member: TeamMember; p: EvoProps; onClose: () => v
 const Radio: React.FC<{ p: EvoProps }> = ({ p }) => {
   const { s } = useEvo();
   const [text, setText] = useState('');
-  const quick = ['Rex haukkuu', 'Kaato', 'Siirtykää linjaan', 'Näköhavainto', 'Odottakaa'];
+  const quick = ['Koira haukkuu', 'Kaato', 'Passissa', 'Näköhavainto', 'Odottakaa'];
 
   const ordered = useMemo(() => [...p.radioMessages].sort((a, b) => a.timestamp - b.timestamp), [p.radioMessages]);
   const send = (t: string) => {

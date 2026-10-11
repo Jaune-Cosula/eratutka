@@ -30,13 +30,13 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
   const name = p.currentSession?.name || (p.currentSession ? '' : s.noSessionBody);
 
   return (
-    <div className="evo-root relative flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden">
+    <div className={'evo-root' + (p.isDarkMode ? '' : ' evo-light') + ' relative flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden'}>
       <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden">
         {/* Situation bar */}
         <button
           onClick={() => setHubOpen(true)}
           className="flex flex-none items-center gap-2.5 border-b px-3.5 pb-3 pt-3 text-left"
-          style={{ borderColor: 'var(--e-border-soft)', background: 'linear-gradient(180deg, rgba(11,15,20,.96), rgba(11,15,20,.7))' }}
+          style={{ borderColor: 'var(--e-border-soft)', background: 'linear-gradient(180deg, rgba(var(--e-veil),.96), rgba(var(--e-veil),.7))' }}
         >
           <span className={active ? 'evo-livedot' : 'evo-livedot off'} />
           <span className="min-w-0 flex-1">

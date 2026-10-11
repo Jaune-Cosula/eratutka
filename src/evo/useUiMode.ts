@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
 
 /**
- * Which front-end the app renders: the long-standing "classic" UI, or "Evo" (the
- * Kenttäinstrumentti redesign). Deliberately a *device* choice, not an account setting —
- * it is a test flag, so it is never synced to Firestore and never flips on another device.
+ * Which front-end the app renders: "Evo" (the Kenttäinstrumentti redesign, now the default)
+ * or the long-standing "classic" UI, kept as a fallback behind `?ui=classic`. Deliberately a
+ * *device* choice, not an account setting — it is never synced to Firestore and never flips
+ * on another device.
  *
- * Precedence on load: a `?ui=evo` / `?ui=classic` URL parameter (so a test link is
- * shareable) wins over localStorage, which wins over the default of "classic".
+ * Precedence on load: a `?ui=evo` / `?ui=classic` URL parameter wins over localStorage, which
+ * wins over the default of "evo".
  */
 export type UiMode = 'classic' | 'evo';
 
@@ -21,7 +22,7 @@ function readInitialMode(): UiMode {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === 'evo' || saved === 'classic') return saved;
   } catch {}
-  return 'classic';
+  return 'evo';
 }
 
 export function useUiMode(): [UiMode, (mode: UiMode) => void] {

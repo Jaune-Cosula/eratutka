@@ -9,7 +9,7 @@ export const AnnotationsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, n
 
   return (
     <section className="absolute inset-0 overflow-y-auto pb-6">
-      <header className="sticky top-0 z-10 flex items-end justify-between gap-3 px-4 pt-4 pb-2.5" style={{ background: 'linear-gradient(180deg, rgba(11,15,20,.98) 72%, rgba(11,15,20,0))' }}>
+      <header className="sticky top-0 z-10 flex items-end justify-between gap-3 px-4 pt-4 pb-2.5" style={{ background: 'linear-gradient(180deg, rgba(var(--e-veil),.98) 72%, rgba(var(--e-veil),0))' }}>
         <div>
           <h1 className="text-[22px] font-extrabold">{s.marks}</h1>
           <div className="evo-micro">{p.annotations.length} {lang === 'en' ? 'on map' : 'kartalla'}</div>

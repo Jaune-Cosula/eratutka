@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown, Navigation, Eye } from 'lucide-react';
+import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown, Navigation, Eye, X } from 'lucide-react';
 import { MapContainer } from '../../components/MapContainer';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } from '../core';
+import { calculateDistance, formatDistance, RING_RADII, RING_LIMIT_M } from '../../utils/geoUtils';
 
 /**
  * The field view. The map itself is the real, shared <MapContainer> in its "evo"
@@ -13,7 +14,7 @@ import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } f
  * with the full collar list one tap away. Most of the screen stays map.
  */
 export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
-  const { s } = useEvo();
+  const { s, lang } = useEvo();
   const [radarOn, setRadarOn] = useState(false);
   const [ruler, setRuler] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
@@ -21,6 +22,8 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
   const [viewSheet, setViewSheet] = useState(false);
 
   const tracked = p.visibleDogs.find((d) => d.id === p.selectedDogId) || p.visibleDogs[0] || null;
+  const trackedHunter = p.selectedHunterId ? p.team.find((h) => h.id === p.selectedHunterId) || null : null;
+  const relHunter = trackedHunter ? relToUser(p.userLocation, trackedHunter.lat, trackedHunter.lng) : null;
 
   const recenter = () => {
     if (p.userLocation) p.setMapFocusTarget({ lat: p.userLocation.lat, lng: p.userLocation.lng });
@@ -42,7 +45,7 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
         annotations={p.annotations}
         safetySectors={p.safetySectors}
         userLocation={p.userLocation}
-        isDarkMode={true}
+        isDarkMode={p.isDarkMode}
         onMapClick={p.onMapClick}
         activeRulerPoint={p.activeRulerPoint}
         rulerActive={ruler}
@@ -63,11 +66,27 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
 
       {/* Overlays — positioned over the full-bleed map, inside the viewport */}
       <div className="pointer-events-none absolute inset-0">
-        {/* Building-limit legend: only while the Mittari (ruler) tool is on. */}
+        {/* Mittari legend: ring radii plus the measured distance, only while the tool is on. */}
         {ruler && (
-          <div className="pointer-events-auto absolute left-3 top-3 flex items-center gap-2 rounded-[10px] border px-3 py-2 text-[10.5px] font-bold" style={{ borderColor: 'var(--e-border-soft)', background: 'rgba(11,15,20,.72)', backdropFilter: 'blur(8px)', color: '#fcd34d' }}>
-            <span className="inline-block h-3 w-3 rounded-full border border-dashed" style={{ borderColor: 'rgba(245,165,36,.7)' }} />
-            {s.buildingLimit}
+          <div className="pointer-events-auto absolute left-3 top-3 w-40 rounded-[12px] border p-3 text-[11px]" style={{ borderColor: 'var(--e-border-soft)', background: 'var(--e-surface-2)', backdropFilter: 'blur(8px)' }}>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-black uppercase tracking-wide" style={{ color: 'var(--e-signal)' }}>📏 {s.distance}</span>
+              {p.activeRulerPoint && (
+                <button onClick={() => p.setActiveRulerPoint(null)} title={s.recenter} aria-label={s.recenter} style={{ color: 'var(--e-text-3)' }}>✕</button>
+              )}
+            </div>
+            <ul className="evo-mono space-y-0.5">
+              {RING_RADII.map((r) => (
+                <li key={r} style={{ color: r === RING_LIMIT_M ? 'var(--e-alert)' : 'var(--e-text-2)', fontWeight: r === RING_LIMIT_M ? 800 : 600 }}>
+                  {formatDistance(r)}{r === RING_LIMIT_M ? ' ⚠' : ''}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-1.5 text-[10px] leading-snug" style={{ color: 'var(--e-text-3)' }}>
+              {p.activeRulerPoint && p.userLocation
+                ? `${s.distance}: ${formatDistance(calculateDistance(p.userLocation.lat, p.userLocation.lng, p.activeRulerPoint.lat, p.activeRulerPoint.lng))}`
+                : (lang === 'fi' ? 'Napauta karttaa siirtääksesi renkaat' : 'Tap the map to move the rings')}
+            </div>
           </div>
         )}
 
@@ -87,7 +106,7 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
         {/* Bottom: thin tracked-collar line, full list on demand */}
         <div
           className="pointer-events-auto absolute inset-x-0 bottom-0 px-2 pb-2"
-          style={{ background: 'linear-gradient(0deg, rgba(11,15,20,.9), rgba(11,15,20,.4) 55%, transparent)' }}
+          style={{ background: 'linear-gradient(0deg, rgba(var(--e-veil),.9), rgba(var(--e-veil),.4) 55%, transparent)' }}
         >
           {railOpen && p.visibleDogs.length > 0 && (
             <div className="evo-rail pb-2">
@@ -96,15 +115,36 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
             </div>
           )}
 
+          {trackedHunter && (
+            <div className="mb-1.5 flex items-center gap-2">
+              <div className="evo-card flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+                <button
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => p.setMapFocusTarget({ lat: trackedHunter.lat, lng: trackedHunter.lng })}
+                >
+                  <span className="flex-none text-[13px]">🎯</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-extrabold">{trackedHunter.name}</span>
+                  <span className="evo-mono flex-none text-[13px] font-bold" style={{ color: relHunter ? 'var(--e-info)' : 'var(--e-text-3)' }}>{relHunter ? fmtDist(relHunter.dist) : '—'}</span>
+                  {relHunter && <span className="flex-none text-[11px] font-bold" style={{ color: 'var(--e-info)' }}>{relHunter.compass}</span>}
+                  <span className="flex-none text-[10px] font-bold" style={{ color: 'var(--e-text-3)' }}>{trackedHunter.battery}%</span>
+                </button>
+                <button className="evo-iconbtn flex-none" style={{ width: 30, height: 30 }} onClick={() => p.setSelectedHunterId?.(null)} title={s.stopTracking} aria-label={s.stopTracking}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {p.visibleDogs.length === 0 ? (
             <button className="evo-btn primary block" onClick={p.openAddDog}><Plus className="h-4 w-4" />{s.addDog}</button>
           ) : (
             <div className="flex items-center gap-2">
               {tracked && (
-                <button
-                  className="evo-card flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
-                  onClick={() => { p.setSelectedDogId(tracked.id); p.setMapFocusTarget({ lat: tracked.lat, lng: tracked.lng }); }}
-                >
+                <div className="evo-card flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => { p.setSelectedDogId(tracked.id); p.setMapFocusTarget({ lat: tracked.lat, lng: tracked.lng }); }}
+                  >
                   <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: tracked.color }} />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-extrabold">{tracked.name}</span>
                   {(() => {
@@ -119,7 +159,13 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
                       </>
                     );
                   })()}
-                </button>
+                  </button>
+                  {p.selectedDogId === tracked.id && (
+                    <button className="evo-iconbtn flex-none" style={{ width: 30, height: 30 }} onClick={() => p.setSelectedDogId(null)} title={s.stopTracking} aria-label={s.stopTracking}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               )}
               <button
                 className={'evo-iconbtn relative flex-none' + (railOpen ? ' on' : '')}

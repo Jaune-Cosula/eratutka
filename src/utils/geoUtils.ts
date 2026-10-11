@@ -277,6 +277,14 @@ export function calculateWalkTimeMinutes(distanceMeters: number): number {
 export const DOG_TRACK_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 /**
+ * Radii (metres) for the Mittari distance rings. 150 m is Finland's minimum hunting distance
+ * from an inhabited building, so that ring is drawn emphasised. Shared so the classic map and
+ * the Evo legend agree on the same rings.
+ */
+export const RING_RADII = [50, 100, 150, 500, 1000, 2000];
+export const RING_LIMIT_M = 150;
+
+/**
  * Prunes expired dog track history points older than maxAgeMs (default 12 hours).
  * Also filters out any invalid/NaN coordinates or (0,0).
  */

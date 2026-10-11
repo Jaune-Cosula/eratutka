@@ -9,7 +9,7 @@ import {
   SafetySector,
   UserLocation,
 } from '../types';
-import { calculateDistance, calculateBearing, formatDistance, wgs84ToEtrsTm35Fin, calculateDogTotalDistance, getCompassDirection, pruneExpiredTrackPoints, DOG_TRACK_MAX_AGE_MS } from '../utils/geoUtils';
+import { calculateDistance, calculateBearing, formatDistance, wgs84ToEtrsTm35Fin, calculateDogTotalDistance, getCompassDirection, pruneExpiredTrackPoints, DOG_TRACK_MAX_AGE_MS, RING_RADII, RING_LIMIT_M } from '../utils/geoUtils';
 import { Compass, Crosshair, MapPin, Eye, EyeOff, Layers, ChevronDown, Play, Pause } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useSyncedSetting } from '../hooks/useSyncedSetting';
@@ -35,13 +35,6 @@ function extendBoundsSafely(bounds: L.LatLngBounds, lat: unknown, lng: unknown):
  * be the same hue (a red collar, for instance).
  */
 const BARK_TRACK_COLOR = '#dc2626';
-
-/**
- * Radii (metres) for the Mittari distance rings. 150 m is Finland's minimum hunting distance
- * from an inhabited building, so that ring is drawn emphasised (red, dashed).
- */
-const RING_RADII = [50, 100, 150, 500, 1000, 2000];
-const RING_LIMIT_M = 150;
 
 interface MapContainerProps {
   mapLayer: MapLayerType;
@@ -1791,49 +1784,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         );
       })()}
 
-      {/* MML API Key Error / Fallback Banner (Only if user has selected custom key and it fails) */}
-      {mmlTileError && mmlSource === 'custom' && (mapLayer === 'mml_maasto' || mapLayer === 'mml_tausta' || showKiinteistorajat) && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1000] max-w-lg w-[92%] bg-stone-900/95 border border-amber-500/60 text-amber-200 px-3.5 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between text-xs space-x-2 animate-fadeIn">
-          <div className="flex items-center space-x-2.5 overflow-hidden">
-            <span className="text-lg shrink-0">⚠️</span>
-            <div className="leading-tight">
-              <div className="font-extrabold text-amber-300">
-                {language === 'fi' ? 'Oma MML API-avain ei vastaa tai puuttuu' : 'Custom NLS API Key Not Responding or Missing'}
-              </div>
-              <div className="text-[11px] text-stone-300 truncate">
-                {language === 'fi'
-                  ? 'Voit siirtyä käyttämään maksutonta Kapsin MML-palvelinta yhdellä klikkauksella.'
-                  : 'You can switch to the free Kapsi NLS server with one click.'}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center space-x-1.5 shrink-0">
-            <button
-              onClick={() => {
-                setMmlSource('kapsi');
-                setMmlTileError(false);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[11px] transition shadow flex items-center space-x-1 cursor-pointer"
-            >
-              <span>{language === 'fi' ? 'Käytä Kapsia 🌲' : 'Use Kapsi 🌲'}</span>
-            </button>
-            <button
-              onClick={() => setShowMmlKeyModal(true)}
-              className="px-2 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-[11px] transition cursor-pointer"
-            >
-              <span>{language === 'fi' ? 'Asetukset ⚙️' : 'Settings ⚙️'}</span>
-            </button>
-            <button
-              onClick={() => setMmlTileError(false)}
-              className="p-1 rounded-lg text-stone-400 hover:text-stone-200 text-xs cursor-pointer"
-              title={language === 'fi' ? 'Sulje ilmoitus' : 'Dismiss notice'}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* MML Karttalähde & API-avain modal */}
       {showMmlKeyModal && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-stone-950/85 backdrop-blur-sm p-4 animate-fadeIn">
@@ -2000,6 +1950,53 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         </div>
       )}
       </>)}
+
+      {/* MML API Key Error / Fallback Banner — outside the classic-only chrome so a failed
+          custom key is not silent in the Evo variant either. */}
+      {mmlTileError && mmlSource === 'custom' && (mapLayer === 'mml_maasto' || mapLayer === 'mml_tausta' || showKiinteistorajat) && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1000] max-w-lg w-[92%] bg-stone-900/95 border border-amber-500/60 text-amber-200 px-3.5 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between text-xs space-x-2 animate-fadeIn">
+          <div className="flex items-center space-x-2.5 overflow-hidden">
+            <span className="text-lg shrink-0">⚠️</span>
+            <div className="leading-tight">
+              <div className="font-extrabold text-amber-300">
+                {language === 'fi' ? 'Oma MML API-avain ei vastaa tai puuttuu' : 'Custom NLS API Key Not Responding or Missing'}
+              </div>
+              <div className="text-[11px] text-stone-300 truncate">
+                {language === 'fi'
+                  ? 'Voit siirtyä käyttämään maksutonta Kapsin MML-palvelinta yhdellä klikkauksella.'
+                  : 'You can switch to the free Kapsi NLS server with one click.'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-1.5 shrink-0">
+            <button
+              onClick={() => {
+                setMmlSource('kapsi');
+                setMmlTileError(false);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-[11px] transition shadow flex items-center space-x-1 cursor-pointer"
+            >
+              <span>{language === 'fi' ? 'Käytä Kapsia 🌲' : 'Use Kapsi 🌲'}</span>
+            </button>
+            {/* The MML key modal is classic-only; in Evo the key lives in the account settings. */}
+            {variant !== 'evo' && (
+              <button
+                onClick={() => setShowMmlKeyModal(true)}
+                className="px-2 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-[11px] transition cursor-pointer"
+              >
+                <span>{language === 'fi' ? 'Asetukset ⚙️' : 'Settings ⚙️'}</span>
+              </button>
+            )}
+            <button
+              onClick={() => setMmlTileError(false)}
+              className="p-1 rounded-lg text-stone-400 hover:text-stone-200 text-xs cursor-pointer"
+              title={language === 'fi' ? 'Sulje ilmoitus' : 'Dismiss notice'}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -23,9 +23,35 @@
   --e-alert: #ef4444;
   --e-alert-soft: rgba(239, 68, 68, 0.14);
   --e-info: #38bdf8;
+  /* RGB triplet for the "veil" gradients (situation bar, screen headers, map fade, nav). */
+  --e-veil: 11, 15, 20;
 
   background: var(--e-bg);
   color: var(--e-text);
+}
+
+/* Light theme. Only the tokens change; components that read them adapt. The reused classic
+   collar panels (CollarControlPanel, CollarDiagnosticsPanel, …) use fixed dark Tailwind
+   colors and deliberately stay dark here. */
+.evo-root.evo-light {
+  --e-bg: #eef1f4;
+  --e-bg-2: #e4e9ee;
+  --e-surface: #ffffff;
+  --e-surface-2: #f2f5f8;
+  --e-surface-3: #e6ebf0;
+  --e-border: #d3dbe3;
+  --e-border-soft: rgba(16, 24, 32, 0.09);
+  --e-text: #10171f;
+  --e-text-2: #46535f;
+  --e-text-3: #7a8794;
+  --e-signal: #b26a00;
+  --e-signal-soft: rgba(178, 106, 0, 0.13);
+  --e-live: #15803d;
+  --e-live-soft: rgba(21, 128, 61, 0.12);
+  --e-alert: #dc2626;
+  --e-alert-soft: rgba(220, 38, 38, 0.1);
+  --e-info: #0284c7;
+  --e-veil: 238, 241, 244;
 }
 .evo-root ::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -162,7 +188,7 @@
 .evo-switch.on { background: var(--e-signal-soft); border-color: rgba(245, 165, 36, 0.5); }
 .evo-switch.on::after { transform: translateX(18px); background: var(--e-signal); }
 
-.evo-nav { display: grid; grid-template-columns: repeat(5, 1fr); background: linear-gradient(0deg, rgba(11, 15, 20, 0.99), rgba(14, 19, 25, 0.96)); border-top: 1px solid var(--e-border-soft); }
+.evo-nav { display: grid; grid-template-columns: repeat(5, 1fr); background: linear-gradient(0deg, rgba(var(--e-veil), 0.99), rgba(var(--e-veil), 0.96)); border-top: 1px solid var(--e-border-soft); }
 .evo-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--e-text-3); position: relative; transition: color 0.15s; padding: 8px 0; }
 .evo-nav button.on { color: var(--e-signal); }
 .evo-nav button.on::before { content: ""; position: absolute; top: 2px; width: 22px; height: 3px; border-radius: 999px; background: var(--e-signal); box-shadow: 0 0 10px var(--e-signal); }
