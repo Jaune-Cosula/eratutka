@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Activity } from 'lucide-react';
+import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Activity, Eye, EyeOff } from 'lucide-react';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, dogStatusTone, timeAgo, fmtClock, Sheet, Btn } from '../core';
 
@@ -54,6 +54,15 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
                 <div className="evo-mono text-[16px] font-bold">{rel ? fmtDist(rel.dist) : '—'}</div>
                 <div className="text-[10px] font-bold" style={{ color: 'var(--e-text-3)' }}>{rel ? rel.compass : s.lost} · {timeAgo(dog.lastUpdated, lang)}</div>
               </div>
+              <button
+                className="evo-iconbtn flex-none"
+                style={{ width: 34, height: 34, color: hidden ? 'var(--e-text-3)' : undefined }}
+                onClick={(e) => { e.stopPropagation(); p.onToggleDogVisibility(dog.id); }}
+                title={hidden ? s.showOnMap : s.hideOnMap}
+                aria-label={hidden ? s.showOnMap : s.hideOnMap}
+              >
+                {hidden ? <EyeOff className="h-[17px] w-[17px]" /> : <Eye className="h-[17px] w-[17px]" />}
+              </button>
             </div>
           );
         })}
@@ -88,6 +97,7 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
   const { s, lang } = useEvo();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
   const points = dog.trackHistory?.length || 0;
+  const hidden = p.hiddenDogIds.includes(dog.id);
 
   return (
     <div className="space-y-3">
@@ -114,6 +124,11 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
       <div className="flex gap-2">
         <Btn block onClick={() => { p.setSelectedDogId(dog.id); p.setMapFocusTarget({ lat: dog.lat, lng: dog.lng }); nav.goMap(); onClose(); }}><MapPin className="h-4 w-4" />{s.map}</Btn>
       </div>
+
+      <Btn block onClick={() => p.onToggleDogVisibility(dog.id)}>
+        {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+        {hidden ? s.showOnMap : s.hideOnMap}
+      </Btn>
 
       {p.isMyDog(dog) && (
         <Btn block onClick={() => { p.onUnshareDog(dog.id); onClose(); }}><Download className="h-4 w-4" />{s.toLibrary}</Btn>

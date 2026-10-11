@@ -40,7 +40,7 @@ export const fi = {
   signal: 'Signaali', distance: 'Etäisyys', speed: 'Nopeus', status: 'Tila',
   history: 'Kulkuhistoria', lastSeen: 'Paikkatieto', toLibrary: 'Siirrä kirjastoon',
   noDogs: 'Ei pantoja kytkettynä', noDogsHint: 'Kytke koiran GPS-panta syöttämällä pannan ID tai IMEI.',
-  showOnMap: 'Näytä kartalla', hidden: 'Piilotettu', shareInHunt: 'Jaa jahdissa',
+  showOnMap: 'Näytä kartalla', hideOnMap: 'Piilota kartalta', hidden: 'Piilotettu', shareInHunt: 'Jaa jahdissa',
   myDog: 'Oma panta', telemetry: 'Telemetria', track: 'Reitti', diagnostics: 'Diagnostiikka',
 
   teamTitle: 'Jahtiporukka', owner: 'Jahtimestari', role: 'Rooli',
@@ -88,7 +88,7 @@ export const en: EvoStrings = {
   signal: 'Signal', distance: 'Distance', speed: 'Speed', status: 'Status',
   history: 'Track history', lastSeen: 'Last fix', toLibrary: 'Move to library',
   noDogs: 'No collars connected', noDogsHint: 'Connect a GPS collar by entering its ID or IMEI.',
-  showOnMap: 'Show on map', hidden: 'Hidden', shareInHunt: 'Share in hunt',
+  showOnMap: 'Show on map', hideOnMap: 'Hide from map', hidden: 'Hidden', shareInHunt: 'Share in hunt',
   myDog: 'My collar', telemetry: 'Telemetry', track: 'Track', diagnostics: 'Diagnostics',
 
   teamTitle: 'Hunting party', owner: 'Hunt master', role: 'Role',
