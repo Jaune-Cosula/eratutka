@@ -1187,6 +1187,7 @@ export default function App() {
         isGpsTracking={isGpsTracking}
         toggleGps={toggleGps}
         onOpenSos={() => setShowSosModal(true)}
+        onSwitchToEvo={() => setUiMode('evo')}
         onExportGpx={handleExportGpx}
         onImportMapData={() => setShowImportMapDataModal(true)}
         onAddDog={() => setShowAddDogModal(true)}

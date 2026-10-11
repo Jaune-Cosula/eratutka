@@ -22,6 +22,7 @@ import {
   ChevronUp,
   MessageSquare,
   Globe,
+  Sparkles,
 } from 'lucide-react';
 import { UserLocation, HuntSession } from '../types';
 import { UserProfile } from '../services/userService';
@@ -50,6 +51,8 @@ interface HeaderProps {
   currentUser?: FirebaseUser | null;
   userProfile?: UserProfile | null;
   onOpenAuthModal?: () => void;
+  /** Switches the device to the Evo front-end. Only shown when provided. */
+  onSwitchToEvo?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -74,6 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser = null,
   userProfile = null,
   onOpenAuthModal,
+  onSwitchToEvo,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const { language, setLanguage, t } = useLanguage();
@@ -352,6 +356,19 @@ export const Header: React.FC<HeaderProps> = ({
             >
               {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4 text-amber-400" />}
             </button>
+
+            {/* Switch to Evo front-end (classic is the fallback; this is the way back) */}
+            {onSwitchToEvo && (
+              <button
+                id="btn-switch-to-evo"
+                onClick={onSwitchToEvo}
+                title={language === 'fi' ? 'Vaihda Evo-näkymään' : 'Switch to Evo view'}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-stone-800/80 hover:bg-stone-700 text-amber-300 border border-amber-500/40 transition"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="hidden lg:inline">{language === 'fi' ? 'Evo-näkymä' : 'Evo view'}</span>
+              </button>
+            )}
 
             {/* GPX Export / Download map data */}
             <button
