@@ -68,6 +68,9 @@ interface MapContainerProps {
   setShowDogTracks: (val: boolean) => void;
   showHunterNames: boolean;
   setShowHunterNames: (val: boolean) => void;
+  /** Optional controlled annotation visibility; falls back to internal state when omitted. */
+  showAnnotations?: boolean;
+  setShowAnnotations?: (val: boolean) => void;
   toggleGps?: () => void;
   isGpsTracking?: boolean;
   mapFocusTarget?: { lat: number; lng: number } | null;
@@ -107,6 +110,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   setShowDogTracks,
   showHunterNames,
   setShowHunterNames,
+  showAnnotations: showAnnotationsProp,
+  setShowAnnotations: setShowAnnotationsProp,
   toggleGps,
   isGpsTracking = false,
   mapFocusTarget,
@@ -140,7 +145,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
   const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState<boolean>(false);
-  const [showAnnotations, setShowAnnotations] = useState<boolean>(true);
+  const [internalShowAnnotations, setInternalShowAnnotations] = useState<boolean>(true);
+  const showAnnotations = showAnnotationsProp ?? internalShowAnnotations;
+  const setShowAnnotations = setShowAnnotationsProp ?? setInternalShowAnnotations;
   const [isFollowingTarget, setIsFollowingTarget] = useState<boolean>(false);
   const isFollowingTargetRef = useRef<boolean>(false);
   isFollowingTargetRef.current = isFollowingTarget;

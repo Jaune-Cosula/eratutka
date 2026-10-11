@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown } from 'lucide-react';
+import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown, Navigation, Eye } from 'lucide-react';
 import { MapContainer } from '../../components/MapContainer';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } from '../core';
@@ -18,6 +18,7 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
   const [ruler, setRuler] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [layerSheet, setLayerSheet] = useState(false);
+  const [viewSheet, setViewSheet] = useState(false);
 
   const tracked = p.visibleDogs.find((d) => d.id === p.selectedDogId) || p.visibleDogs[0] || null;
 
@@ -52,6 +53,8 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
         setShowDogTracks={p.setShowDogTracks}
         showHunterNames={p.showHunterNames}
         setShowHunterNames={p.setShowHunterNames}
+        showAnnotations={p.showAnnotations}
+        setShowAnnotations={p.setShowAnnotations}
         toggleGps={p.toggleGps}
         isGpsTracking={p.isGpsTracking}
         mapFocusTarget={p.mapFocusTarget}
@@ -73,6 +76,8 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
           <button className="evo-iconbtn" onClick={() => setLayerSheet(true)} title={s.layers}><Layers className="h-[19px] w-[19px]" /></button>
           <button className={'evo-iconbtn' + (radarOn ? ' on' : '')} onClick={() => setRadarOn((v) => !v)} title={s.radar}><Radar className="h-[19px] w-[19px]" /></button>
           <button className={'evo-iconbtn' + (ruler ? ' on' : '')} onClick={() => setRuler((v) => !v)} title={s.distance}><Ruler className="h-[19px] w-[19px]" /></button>
+          <button className={'evo-iconbtn' + (p.isGpsTracking ? ' on' : '')} onClick={p.toggleGps} title={s.gps}><Navigation className="h-[19px] w-[19px]" /></button>
+          <button className="evo-iconbtn" onClick={() => setViewSheet(true)} title={s.visibility}><Eye className="h-[19px] w-[19px]" /></button>
           <button className="evo-iconbtn" onClick={recenter} title={s.recenter}><Crosshair className="h-[19px] w-[19px]" /></button>
           <button className="evo-iconbtn" onClick={p.openSos} title={s.sos} style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,.4)' }}><TriangleAlert className="h-[19px] w-[19px]" /></button>
         </div>
@@ -146,9 +151,29 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
           </div>
         </Sheet>
       )}
+
+      {viewSheet && (
+        <Sheet title={s.visibility} onClose={() => setViewSheet(false)}>
+          <div className="evo-card divide-y" style={{ borderColor: 'var(--e-border-soft)' }}>
+            <ToggleRow label={s.dogTracks} on={p.showDogTracks} onToggle={() => p.setShowDogTracks(!p.showDogTracks)} />
+            <ToggleRow label={s.hunterNames} on={p.showHunterNames} onToggle={() => p.setShowHunterNames(!p.showHunterNames)} />
+            {p.setShowSafetySectors && (
+              <ToggleRow label={s.safetySectors} on={Boolean(p.showSafetySectors)} onToggle={() => p.setShowSafetySectors!(!p.showSafetySectors)} />
+            )}
+            <ToggleRow label={s.marks} on={p.showAnnotations} onToggle={() => p.setShowAnnotations(!p.showAnnotations)} />
+          </div>
+        </Sheet>
+      )}
     </section>
   );
 };
+
+const ToggleRow: React.FC<{ label: string; on: boolean; onToggle: () => void }> = ({ label, on, onToggle }) => (
+  <div className="flex items-center justify-between px-4 py-3">
+    <span className="font-bold">{label}</span>
+    <button className={'evo-switch' + (on ? ' on' : '')} onClick={onToggle} aria-label={label} />
+  </div>
+);
 
 /* ------------------------------------------------------------------ dog chip */
 

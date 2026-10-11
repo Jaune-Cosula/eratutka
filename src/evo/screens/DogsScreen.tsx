@@ -1,13 +1,23 @@
 import React, { useState } from 'react';
-import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Activity, Eye, EyeOff } from 'lucide-react';
+import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Eye, EyeOff, RotateCcw, Radio, Phone } from 'lucide-react';
 import { Dog } from '../../types';
-import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, dogStatusTone, timeAgo, fmtClock, Sheet, Btn } from '../core';
+import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, dogStatusTone, timeAgo, Sheet, Btn } from '../core';
+import { CollarTelemetryGauges } from '../../components/radar/CollarTelemetryGauges';
+import { CollarDiagnosticsPanel } from '../../components/radar/CollarDiagnosticsPanel';
+import { CollarControlPanel } from '../../components/radar/CollarControlPanel';
+import { CollarTrackHistoryLog } from '../../components/radar/CollarTrackHistoryLog';
+import { CollarSyncModal } from '../../components/CollarSyncModal';
+import { useManualCollarSync } from '../../hooks/useManualCollarSync';
+import { colorsUsedByOthers } from '../../data/dogColors';
 
 const toneColor = (t: string) => (t === 'live' ? 'var(--e-live)' : t === 'info' ? 'var(--e-info)' : t === 'alert' ? 'var(--e-alert)' : 'var(--e-text-2)');
 
 export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) => {
   const { s, lang } = useEvo();
   const [detail, setDetail] = useState<Dog | null>(null);
+  // The collar's Gateway/Tractive sync modal is a viewport-level overlay, so it is rendered
+  // as a sibling of the detail Sheet rather than inside it.
+  const [syncDog, setSyncDog] = useState<Dog | null>(null);
 
   return (
     <section className="absolute inset-0 overflow-y-auto pb-6">
@@ -86,18 +96,31 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
 
       {detail && (
         <Sheet title={detail.name} onClose={() => setDetail(null)}>
-          <DogDetail dog={detail} p={p} nav={nav} onClose={() => setDetail(null)} />
+          <DogDetail dog={detail} p={p} nav={nav} onClose={() => setDetail(null)} onOpenSync={setSyncDog} />
         </Sheet>
+      )}
+
+      {syncDog && (
+        <CollarSyncModal
+          // Seeds its form from `dog` on mount only, so the key must change with the dog.
+          key={syncDog.id}
+          dog={syncDog}
+          isOpen
+          onClose={() => setSyncDog(null)}
+          onUpdateDog={p.onUpdateDogTelemetry}
+          isDarkMode
+          otherDogColors={colorsUsedByOthers(p.dogs.filter((d) => d.id !== syncDog.id))}
+        />
       )}
     </section>
   );
 };
 
-const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => void }> = ({ dog, p, nav, onClose }) => {
-  const { s, lang } = useEvo();
+const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => void; onOpenSync: (dog: Dog) => void }> = ({ dog, p, nav, onClose, onOpenSync }) => {
+  const { s } = useEvo();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
-  const points = dog.trackHistory?.length || 0;
   const hidden = p.hiddenDogIds.includes(dog.id);
+  const { syncNow, isSyncingGps, syncFeedback, clearFeedback } = useManualCollarSync(p.onUpdateDogTelemetry);
 
   return (
     <div className="space-y-3">
@@ -110,25 +133,39 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
         <span className="font-bold" style={{ color: toneColor(dogStatusTone(dog.status)) }}>{dogStatusLabel(dog.status, s)}</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2.5">
-        <Gauge value={rel ? fmtDist(rel.dist) : '—'} label={`${s.distance}${rel ? ' · ' + rel.compass : ''}`} />
-        <Gauge value={String(dog.speed)} label={`${s.speed} (km/h)`} />
-        <Gauge value={dog.battery + '%'} label={s.battery} />
-      </div>
-
-      <div className="evo-card flex items-center justify-between px-3.5 py-3 text-[12px]">
-        <span className="flex items-center gap-2" style={{ color: 'var(--e-text-2)' }}><Activity className="h-4 w-4" style={{ color: 'var(--e-signal)' }} />{s.history}: <b>{points}</b> {lang === 'en' ? 'points' : 'pistettä'}</span>
-        <span style={{ color: 'var(--e-text-3)' }}>{s.lastSeen}: {fmtClock(dog.lastUpdated)}</span>
-      </div>
+      <CollarTelemetryGauges dog={dog} userLocation={p.userLocation} onUpdateDogTelemetry={p.onUpdateDogTelemetry} />
 
       <div className="flex gap-2">
         <Btn block onClick={() => { p.setSelectedDogId(dog.id); p.setMapFocusTarget({ lat: dog.lat, lng: dog.lng }); nav.goMap(); onClose(); }}><MapPin className="h-4 w-4" />{s.map}</Btn>
+        <Btn block onClick={() => p.onToggleDogVisibility(dog.id)}>
+          {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+          {hidden ? s.showOnMap : s.hideOnMap}
+        </Btn>
       </div>
 
-      <Btn block onClick={() => p.onToggleDogVisibility(dog.id)}>
-        {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-        {hidden ? s.showOnMap : s.hideOnMap}
-      </Btn>
+      <div className="flex gap-2">
+        <Btn block disabled={isSyncingGps} onClick={() => syncNow(dog)}>
+          <RotateCcw className={'h-4 w-4' + (isSyncingGps ? ' animate-spin' : '')} />
+          {isSyncingGps ? s.refreshing : s.refreshNow}
+        </Btn>
+        <Btn block onClick={() => onOpenSync(dog)}><Radio className="h-4 w-4" />{s.collarConnection}</Btn>
+      </div>
+
+      {dog.simNumber && (
+        <a href={`tel:${dog.simNumber}`} className="evo-btn block no-underline">
+          <Phone className="h-4 w-4" />{s.callCollar} ({dog.simNumber})
+        </a>
+      )}
+
+      {syncFeedback && (
+        <button className="evo-card block w-full px-3 py-2 text-left text-[12px] font-bold" style={{ color: 'var(--e-signal)' }} onClick={clearFeedback}>
+          {syncFeedback}
+        </button>
+      )}
+
+      <CollarDiagnosticsPanel dog={dog} isSyncingGps={isSyncingGps} onManualSyncDog={syncNow} />
+      <CollarControlPanel dog={dog} onUpdateDogTelemetry={p.onUpdateDogTelemetry} onToggleDogAlert={p.onToggleDogAlert} onOpenIcarSync={() => onOpenSync(dog)} />
+      <CollarTrackHistoryLog trackHistory={dog.trackHistory} />
 
       {p.isMyDog(dog) && (
         <Btn block onClick={() => { p.onUnshareDog(dog.id); onClose(); }}><Download className="h-4 w-4" />{s.toLibrary}</Btn>
@@ -140,10 +177,3 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
     </div>
   );
 };
-
-const Gauge: React.FC<{ value: string; label: string }> = ({ value, label }) => (
-  <div className="evo-card px-2.5 py-3 text-center">
-    <div className="evo-mono text-[19px] font-bold">{value}</div>
-    <div className="evo-micro mt-1">{label}</div>
-  </div>
-);

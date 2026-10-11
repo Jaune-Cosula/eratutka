@@ -5,7 +5,7 @@ import {
   UserLocation,
 } from '../types';
 import { useLanguage } from '../context/LanguageContext';
-import { fetchDevicePosition, extractTractiveToken } from '../services/collarService';
+import { useManualCollarSync } from '../hooks/useManualCollarSync';
 import { CollarSyncModal } from './CollarSyncModal';
 import { colorsUsedByOthers } from '../data/dogColors';
 import { RadarCollarCardList } from './radar/RadarCollarCardList';
@@ -93,105 +93,14 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
     selectedHunterId ? 'hunter' : 'dog'
   );
   const [showCollarSyncModal, setShowCollarSyncModal] = useState<boolean>(false);
-  const [isSyncingGps, setIsSyncingGps] = useState<boolean>(false);
-  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Deliberately no `|| dogs[0]` fallback: "Lopeta seuranta" clears the selection, and
   // falling back to the first dog here made that button appear to do nothing. With no
   // selection the panel shows its "pick a dog from the list" empty state instead.
   const selectedDog = dogs.find((d) => d.id === selectedDogId);
 
-  const handleManualSyncDog = async (dogToSync: Dog) => {
-    if (!onUpdateDogTelemetry || isSyncingGps) return;
-    setIsSyncingGps(true);
-    setSyncFeedback('Haetaan GPS-paikkatietoa palvelimelta...');
-
-    try {
-      const isTractive =
-        dogToSync.telematicsProvider === 'tractive' ||
-        Boolean(dogToSync.tractiveShareUrl) ||
-        Boolean(dogToSync.trackerModel?.toLowerCase().includes('tractive')) ||
-        String(dogToSync.directGpsId || '').toLowerCase().includes('tractive') ||
-        String(dogToSync.collarId || '').toLowerCase().includes('tractive') ||
-        (dogToSync.tractiveShareUrl && extractTractiveToken(dogToSync.tractiveShareUrl) !== null) ||
-        (dogToSync.directGpsId && extractTractiveToken(dogToSync.directGpsId) !== null) ||
-        (dogToSync.collarId && extractTractiveToken(dogToSync.collarId) !== null);
-
-      const tractiveToken =
-        extractTractiveToken(dogToSync.tractiveShareUrl) ||
-        extractTractiveToken(dogToSync.directGpsId) ||
-        extractTractiveToken(dogToSync.collarId) ||
-        (isTractive ? (dogToSync.tractiveTrackerId || '6f212df630') : null);
-
-      const cleanId = String(
-        (isTractive && tractiveToken) ||
-        dogToSync.directGpsId ||
-        dogToSync.imei ||
-        dogToSync.collarId ||
-        ''
-      ).replace(/^ID[:\s]*/i, '').trim();
-
-      if (!cleanId) {
-        setSyncFeedback('Pannalle ei ole asetettu ID:tä tai jakolinkkiä. Määritä pannan tunnus asetuksista.');
-        setIsSyncingGps(false);
-        return;
-      }
-
-      const gwUrl = isTractive
-        ? (dogToSync.tractiveShareUrl || `https://my.tractive.com/p/${cleanId}`)
-        : (dogToSync.gatewayServerUrl || 'http://35.206.111.214:8080/api/positions');
-
-      const data = await fetchDevicePosition(cleanId, gwUrl);
-
-      if (data && data.success && typeof data.lat === 'number' && typeof data.lng === 'number' && data.lat !== 0) {
-        const reportedBark = typeof data.barkRate === 'number' ? data.barkRate : (dogToSync.barkRate ?? 0);
-        const reportedStatus = data.status || (reportedBark > 0 ? 'haukkuu' : ((data.speed ?? 0) > 2 ? 'liikkeessä' : 'paikallaan'));
-        
-        onUpdateDogTelemetry(dogToSync.id, {
-          lat: data.lat,
-          lng: data.lng,
-          speed: data.speed ?? dogToSync.speed ?? 0,
-          battery: data.battery ?? dogToSync.battery ?? 95,
-          heading: data.heading ?? dogToSync.heading ?? 0,
-          barkRate: reportedBark,
-          barkHoldRemainingFixes: data.barkHoldRemainingFixes ?? dogToSync.barkHoldRemainingFixes,
-          lastBarkTimestamp: data.lastBarkTimestamp || dogToSync.lastBarkTimestamp,
-          status: reportedStatus,
-          telematicsProvider: isTractive ? 'tractive' : 'eratutka_direct',
-          gatewayServerUrl: isTractive ? (dogToSync.tractiveShareUrl || gwUrl) : gwUrl,
-          directGpsId: cleanId || data.deviceId || dogToSync.directGpsId || '',
-          tractiveShareUrl: dogToSync.tractiveShareUrl || (isTractive ? (data.tractiveInfo?.shareUrl || `https://my.tractive.com/p/${cleanId}`) : undefined),
-          tractivePetName: data.tractiveInfo?.petName || dogToSync.tractivePetName,
-          tractiveTrackerId: data.tractiveInfo?.trackerId || dogToSync.tractiveTrackerId,
-          tractiveOwnerName: data.tractiveInfo?.ownerName || dogToSync.tractiveOwnerName,
-          autoSyncEnabled: true,
-          satellites: data.satellites ?? dogToSync.satellites ?? (isTractive ? 14 : 11),
-          gsmSignalCsq: data.gsmSignalCsq ?? dogToSync.gsmSignalCsq ?? 24,
-          gsmSignalDb: data.gsmSignalDb ?? dogToSync.gsmSignalDb ?? -65,
-          voltage: data.voltage ?? dogToSync.voltage ?? 4.12,
-          networkStatus: data.networkStatus ?? dogToSync.networkStatus ?? (isTractive ? 'Tractive Cloud Online (eSIM)' : 'GPRS / TCP Yhdistetty'),
-          fixMode: data.fixMode ?? dogToSync.fixMode ?? '3D GPS Fix (Tarkka)',
-          hdop: data.hdop ?? dogToSync.hdop ?? 0.9,
-          rawPayload: data.rawPayload || dogToSync.rawPayload,
-          protocolName: isTractive ? 'Tractive GPS Live Share' : (data.protocolName || dogToSync.protocolName || 'Micro GPS Gateway'),
-          lastPacketLatencySec: data.lastPacketLatencySec ?? 0,
-          lastUpdated: data.timestamp || Date.now(),
-        });
-        setSyncFeedback(
-          isTractive
-            ? `Tractive Live -sijainti päivitetty: ${data.lat.toFixed(5)}°, ${data.lng.toFixed(5)}° (Lemmikki: ${data.tractiveInfo?.petName || 'Nirppu'}, Akku: ${data.battery ?? 98}%)`
-            : `Sijainti päivitetty: ${data.lat.toFixed(5)}°, ${data.lng.toFixed(5)}° (Nopeus: ${data.speed ?? 0} km/h, Satelliitit: ${data.satellites ?? 11} kpl, Akku: ${data.battery ?? 95}%)`
-        );
-      } else {
-        setSyncFeedback(data?.message || `Palvelimelta (${gwUrl}) ei saatu koordinaatteja laitteelle (${cleanId}).`);
-      }
-    } catch (e: any) {
-      setSyncFeedback(`Yhteysvirhe: ${e.message || 'Verkkovirhe'}`);
-    } finally {
-      setIsSyncingGps(false);
-      setTimeout(() => setSyncFeedback(null), 5000);
-    }
-  };
+  const { syncNow, isSyncingGps, syncFeedback, clearFeedback } =
+    useManualCollarSync(onUpdateDogTelemetry);
 
   return (
     <div
@@ -408,7 +317,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
 
                     {onUpdateDogTelemetry && (
                       <button
-                        onClick={() => handleManualSyncDog(selectedDog)}
+                        onClick={() => syncNow(selectedDog)}
                         disabled={isSyncingGps}
                         className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-stone-200 border border-stone-600 font-bold text-xs transition flex items-center space-x-1.5 shadow cursor-pointer"
                         title="Hae tuorein GPS-paikkatieto heti manuaalisesti Gatewaysta"
@@ -444,7 +353,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                       <span className="text-sm">📡</span>
                       <span>{syncFeedback}</span>
                     </span>
-                    <button onClick={() => setSyncFeedback(null)} className="text-stone-400 hover:text-stone-200 text-xs px-1 cursor-pointer">✕</button>
+                    <button onClick={clearFeedback} className="text-stone-400 hover:text-stone-200 text-xs px-1 cursor-pointer">✕</button>
                   </div>
                 )}
 
@@ -459,7 +368,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                 <CollarDiagnosticsPanel
                   dog={selectedDog}
                   isSyncingGps={isSyncingGps}
-                  onManualSyncDog={handleManualSyncDog}
+                  onManualSyncDog={syncNow}
                 />
 
                 {/* Subcomponent 3: Tracking Interval Presets & Remote Collar TCP Commands & SMS Fallback & Audio Alerts */}

@@ -2,6 +2,7 @@
  * Collar Service for Erätutka
  * Unifies telematics fetching between useDogTracker and manual sync components.
  */
+import { Dog } from '../types';
 
 export interface DevicePositionResult {
   success: boolean;
@@ -192,4 +193,108 @@ export async function fetchDeviceHistory(
   }
 
   return null;
+}
+
+export interface DogSyncResult {
+  /** Partial telemetry to merge onto the dog, or null when nothing usable came back. */
+  updates: Partial<Dog> | null;
+  /** Human-readable outcome, shown by whichever UI triggered the sync. */
+  feedback: string;
+}
+
+/**
+ * Pulls the latest position for one collar and maps the gateway response onto a dog.
+ *
+ * Pure and UI-free on purpose: both the classic radar panel and the Evo dog detail need the
+ * same fetch-then-map logic, and duplicating the ~80-line telemetry mapping is how the two
+ * front-ends drift apart. The caller owns the "syncing" flag and the feedback timeout.
+ */
+export async function syncDogTelemetry(dogToSync: Dog): Promise<DogSyncResult> {
+  const isTractive =
+    dogToSync.telematicsProvider === 'tractive' ||
+    Boolean(dogToSync.tractiveShareUrl) ||
+    Boolean(dogToSync.trackerModel?.toLowerCase().includes('tractive')) ||
+    String(dogToSync.directGpsId || '').toLowerCase().includes('tractive') ||
+    String(dogToSync.collarId || '').toLowerCase().includes('tractive') ||
+    (dogToSync.tractiveShareUrl && extractTractiveToken(dogToSync.tractiveShareUrl) !== null) ||
+    (dogToSync.directGpsId && extractTractiveToken(dogToSync.directGpsId) !== null) ||
+    (dogToSync.collarId && extractTractiveToken(dogToSync.collarId) !== null);
+
+  const tractiveToken =
+    extractTractiveToken(dogToSync.tractiveShareUrl) ||
+    extractTractiveToken(dogToSync.directGpsId) ||
+    extractTractiveToken(dogToSync.collarId) ||
+    (isTractive ? (dogToSync.tractiveTrackerId || '6f212df630') : null);
+
+  const cleanId = String(
+    (isTractive && tractiveToken) ||
+    dogToSync.directGpsId ||
+    dogToSync.imei ||
+    dogToSync.collarId ||
+    ''
+  ).replace(/^ID[:\s]*/i, '').trim();
+
+  if (!cleanId) {
+    return {
+      updates: null,
+      feedback: 'Pannalle ei ole asetettu ID:tä tai jakolinkkiä. Määritä pannan tunnus asetuksista.',
+    };
+  }
+
+  const gwUrl = isTractive
+    ? (dogToSync.tractiveShareUrl || `https://my.tractive.com/p/${cleanId}`)
+    : (dogToSync.gatewayServerUrl || 'http://35.206.111.214:8080/api/positions');
+
+  try {
+    const data = await fetchDevicePosition(cleanId, gwUrl);
+
+    if (data && data.success && typeof data.lat === 'number' && typeof data.lng === 'number' && data.lat !== 0) {
+      const reportedBark = typeof data.barkRate === 'number' ? data.barkRate : (dogToSync.barkRate ?? 0);
+      const reportedStatus = data.status || (reportedBark > 0 ? 'haukuu' : ((data.speed ?? 0) > 2 ? 'liikkeessä' : 'paikallaan'));
+
+      const updates: Partial<Dog> = {
+        lat: data.lat,
+        lng: data.lng,
+        speed: data.speed ?? dogToSync.speed ?? 0,
+        battery: data.battery ?? dogToSync.battery ?? 95,
+        heading: data.heading ?? dogToSync.heading ?? 0,
+        barkRate: reportedBark,
+        barkHoldRemainingFixes: data.barkHoldRemainingFixes ?? dogToSync.barkHoldRemainingFixes,
+        lastBarkTimestamp: data.lastBarkTimestamp || dogToSync.lastBarkTimestamp,
+        status: reportedStatus as Dog['status'],
+        telematicsProvider: isTractive ? 'tractive' : 'eratutka_direct',
+        gatewayServerUrl: isTractive ? (dogToSync.tractiveShareUrl || gwUrl) : gwUrl,
+        directGpsId: cleanId || data.deviceId || dogToSync.directGpsId || '',
+        tractiveShareUrl: dogToSync.tractiveShareUrl || (isTractive ? (data.tractiveInfo?.shareUrl || `https://my.tractive.com/p/${cleanId}`) : undefined),
+        tractivePetName: data.tractiveInfo?.petName || dogToSync.tractivePetName,
+        tractiveTrackerId: data.tractiveInfo?.trackerId || dogToSync.tractiveTrackerId,
+        tractiveOwnerName: data.tractiveInfo?.ownerName || dogToSync.tractiveOwnerName,
+        autoSyncEnabled: true,
+        satellites: data.satellites ?? dogToSync.satellites ?? (isTractive ? 14 : 11),
+        gsmSignalCsq: data.gsmSignalCsq ?? dogToSync.gsmSignalCsq ?? 24,
+        gsmSignalDb: data.gsmSignalDb ?? dogToSync.gsmSignalDb ?? -65,
+        voltage: data.voltage ?? dogToSync.voltage ?? 4.12,
+        networkStatus: data.networkStatus ?? dogToSync.networkStatus ?? (isTractive ? 'Tractive Cloud Online (eSIM)' : 'GPRS / TCP Yhdistetty'),
+        fixMode: data.fixMode ?? dogToSync.fixMode ?? '3D GPS Fix (Tarkka)',
+        hdop: data.hdop ?? dogToSync.hdop ?? 0.9,
+        rawPayload: data.rawPayload || dogToSync.rawPayload,
+        protocolName: isTractive ? 'Tractive GPS Live Share' : (data.protocolName || dogToSync.protocolName || 'Micro GPS Gateway'),
+        lastPacketLatencySec: data.lastPacketLatencySec ?? 0,
+        lastUpdated: data.timestamp || Date.now(),
+      };
+
+      const feedback = isTractive
+        ? `Tractive Live -sijainti päivitetty: ${data.lat.toFixed(5)}°, ${data.lng.toFixed(5)}° (Lemmikki: ${data.tractiveInfo?.petName || 'Nirppu'}, Akku: ${data.battery ?? 98}%)`
+        : `Sijainti päivitetty: ${data.lat.toFixed(5)}°, ${data.lng.toFixed(5)}° (Nopeus: ${data.speed ?? 0} km/h, Satelliitit: ${data.satellites ?? 11} kpl, Akku: ${data.battery ?? 95}%)`;
+
+      return { updates, feedback };
+    }
+
+    return {
+      updates: null,
+      feedback: data?.message || `Palvelimelta (${gwUrl}) ei saatu koordinaatteja laitteelle (${cleanId}).`,
+    };
+  } catch (e: any) {
+    return { updates: null, feedback: `Yhteysvirhe: ${e?.message || 'Verkkovirhe'}` };
+  }
 }

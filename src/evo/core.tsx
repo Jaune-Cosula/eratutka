@@ -42,6 +42,8 @@ export const fi = {
   noDogs: 'Ei pantoja kytkettynä', noDogsHint: 'Kytke koiran GPS-panta syöttämällä pannan ID tai IMEI.',
   showOnMap: 'Näytä kartalla', hideOnMap: 'Piilota kartalta', hidden: 'Piilotettu', shareInHunt: 'Jaa jahdissa',
   myDog: 'Oma panta', telemetry: 'Telemetria', track: 'Reitti', diagnostics: 'Diagnostiikka',
+  refreshNow: 'Päivitä heti', refreshing: 'Päivitetään…', callCollar: 'Soita pantaan', collarConnection: 'Pannan GPS-yhteys',
+  visibility: 'Näkyvyys', dogTracks: 'Koirien reitit', hunterNames: 'Passimiesten nimet', safetySectors: 'Turvasektorit',
 
   teamTitle: 'Jahtiporukka', owner: 'Jahtimestari', role: 'Rooli',
   quickPhrases: 'Pikaviestit', msgPlaceholder: 'Viesti porukalle…',
@@ -90,6 +92,8 @@ export const en: EvoStrings = {
   noDogs: 'No collars connected', noDogsHint: 'Connect a GPS collar by entering its ID or IMEI.',
   showOnMap: 'Show on map', hideOnMap: 'Hide from map', hidden: 'Hidden', shareInHunt: 'Share in hunt',
   myDog: 'My collar', telemetry: 'Telemetry', track: 'Track', diagnostics: 'Diagnostics',
+  refreshNow: 'Refresh now', refreshing: 'Refreshing…', callCollar: 'Call collar', collarConnection: 'Collar GPS',
+  visibility: 'Visibility', dogTracks: 'Dog tracks', hunterNames: 'Hunter names', safetySectors: 'Safety sectors',
 
   teamTitle: 'Hunting party', owner: 'Hunt master', role: 'Role',
   quickPhrases: 'Quick phrases', msgPlaceholder: 'Message the party…',
@@ -306,12 +310,15 @@ export interface EvoProps {
   setShowHunterNames: (v: boolean) => void;
   showSafetySectors?: boolean;
   setShowSafetySectors?: (v: boolean) => void;
+  showAnnotations: boolean;
+  setShowAnnotations: (v: boolean) => void;
 
   onToggleDogVisibility: (dogId: string) => void;
   onUnshareDog: (dogId: string) => void;
   onShareLibraryDog: (dog: Dog) => void;
   onDeleteDog: (dogId: string, options?: { keepSaved?: boolean }) => void;
   onToggleDogAlert: (dogId: string, type: 'bark' | 'stand') => void;
+  onUpdateDogTelemetry: (dogId: string, updates: Partial<Dog>) => void;
   onSendMessage: (text: string, category?: 'alert' | 'info' | 'action') => void;
   onUpdateMemberStatus: (memberId: string, status: HunterStatus) => void;
   onDeleteHunter: (hunterId: string) => void;

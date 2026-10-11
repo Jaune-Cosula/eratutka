@@ -320,6 +320,9 @@ export default function App() {
   const [showSafetySectors, setShowSafetySectors] = useState<boolean>(true);
   const [showDogTracks, setShowDogTracks] = useState<boolean>(true);
   const [showHunterNames, setShowHunterNames] = useState<boolean>(true);
+  // Lifted out of MapContainer so the Evo map can toggle it too; classic keeps the same
+  // default (true), so its behaviour is unchanged.
+  const [showAnnotations, setShowAnnotations] = useState<boolean>(true);
   const [activeRulerPoint, setActiveRulerPoint] = useState<{ lat: number; lng: number; title: string } | null>(null);
   const [mapFocusTarget, setMapFocusTarget] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -1130,11 +1133,14 @@ export default function App() {
     setShowHunterNames,
     showSafetySectors,
     setShowSafetySectors,
+    showAnnotations,
+    setShowAnnotations,
     onToggleDogVisibility: handleToggleDogVisibility,
     onUnshareDog: handleUnshareDog,
     onShareLibraryDog: handleShareLibraryDog,
     onDeleteDog: handleDeleteDog,
     onToggleDogAlert: handleToggleDogAlert,
+    onUpdateDogTelemetry: handleUpdateDogTelemetry,
     onSendMessage: handleSendMessage,
     onUpdateMemberStatus: handleUpdateMemberStatus,
     onDeleteHunter: handleDeleteHunter,
@@ -1216,6 +1222,8 @@ export default function App() {
             setShowDogTracks={setShowDogTracks}
             showHunterNames={showHunterNames}
             setShowHunterNames={setShowHunterNames}
+            showAnnotations={showAnnotations}
+            setShowAnnotations={setShowAnnotations}
             toggleGps={toggleGps}
             isGpsTracking={isGpsTracking}
             mapFocusTarget={mapFocusTarget}
