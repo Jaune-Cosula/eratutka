@@ -42,6 +42,31 @@ export interface DevicePositionResult {
 }
 
 /**
+ * The most recent gateway response per device, kept only so the collar diagnostics can show
+ * what the app actually received during a bark. Temporary debug aid, not used for logic.
+ */
+export interface LastGatewayResponse {
+  at: number;
+  status?: string;
+  barkRate?: number;
+  isBarking?: boolean;
+  hasRawPayload: boolean;
+  keys: string[];
+}
+export const lastGatewayResponses = new Map<string, LastGatewayResponse>();
+
+function recordGatewayResponse(id: string, data: DevicePositionResult | null): void {
+  lastGatewayResponses.set(id, {
+    at: Date.now(),
+    status: data?.status,
+    barkRate: data?.barkRate,
+    isBarking: data?.isBarking,
+    hasRawPayload: Boolean(data?.rawPayload),
+    keys: data ? Object.keys(data) : [],
+  });
+}
+
+/**
  * Extracts Tractive share token from URL, path, or raw token string.
  */
 export function extractTractiveToken(input: string | undefined | null): string | null {
@@ -116,6 +141,7 @@ export async function fetchDevicePosition(
     const candidate = tokenFromGw || tokenFromId || gwUrl || trimmedId;
     const tractiveRes = await fetchTractivePosition(candidate);
     if (tractiveRes && tractiveRes.success && typeof tractiveRes.lat === 'number') {
+      recordGatewayResponse(trimmedId, tractiveRes);
       return tractiveRes;
     }
   }
@@ -159,6 +185,7 @@ export async function fetchDevicePosition(
     }
   }
 
+  recordGatewayResponse(trimmedId, data);
   return data;
 }
 
