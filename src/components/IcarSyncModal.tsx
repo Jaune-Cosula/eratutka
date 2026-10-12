@@ -56,6 +56,14 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
   const [customLat, setCustomLat] = useState<string>(dog.lat ? dog.lat.toFixed(6) : '60.852140');
   const [customLng, setCustomLng] = useState<string>(dog.lng ? dog.lng.toFixed(6) : '25.681420');
 
+  // Dog name — editable here because the same collar can be moved between dogs. Committed on
+  // blur / Enter so a half-typed name is not relayed to the party on every keystroke.
+  const [nameDraft, setNameDraft] = useState(dog.name || '');
+  const commitName = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== dog.name) onUpdateDog(dog.id, { name: trimmed });
+  };
+
   // Test Results
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -315,6 +323,31 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+          {/* The same collar can be moved between dogs, so the name is editable here and not
+              only when the collar is first added. */}
+          <div className="p-3.5 rounded-2xl bg-stone-950/80 border border-stone-800">
+            <label className="block text-xs font-bold uppercase tracking-wider text-amber-400 mb-2">
+              Koiran nimi
+            </label>
+            <input
+              type="text"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitName();
+                }
+              }}
+              placeholder="esim. Rex"
+              className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-sm font-semibold outline-none focus:border-amber-500"
+            />
+            <p className="text-[11px] text-stone-400 mt-2 leading-relaxed">
+              Samaa pantaa voi käyttää eri koiralla — nimen muutos päivittyy koko jahtiporukalle.
+            </p>
+          </div>
+
           {/* The dog's map colour is a display setting, so it applies at once rather than
               waiting for the form's save button. Swatches worn by another dog in this hunt
               are flagged, which is the whole reason to change it. */}

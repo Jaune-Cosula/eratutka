@@ -120,6 +120,9 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
   const { s } = useEvo();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
   const hidden = p.hiddenDogIds.includes(dog.id);
+  // Only the collar's own device or the hunt master may remove it or drive its settings;
+  // everyone else sees it read-only.
+  const canManage = p.isMyDog(dog) || Boolean(p.currentSession?.isJahtimestari);
   const { syncNow, isSyncingGps, syncFeedback, clearFeedback } = useManualCollarSync(p.onUpdateDogTelemetry);
 
   return (
@@ -148,7 +151,9 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
           <RotateCcw className={'h-4 w-4' + (isSyncingGps ? ' animate-spin' : '')} />
           {isSyncingGps ? s.refreshing : s.refreshNow}
         </Btn>
-        <Btn block onClick={() => onOpenSync(dog)}><Radio className="h-4 w-4" />{s.collarConnection}</Btn>
+        {canManage && (
+          <Btn block onClick={() => onOpenSync(dog)}><Radio className="h-4 w-4" />{s.collarConnection}</Btn>
+        )}
       </div>
 
       {dog.simNumber && (
@@ -164,16 +169,20 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
       )}
 
       <CollarDiagnosticsPanel dog={dog} isSyncingGps={isSyncingGps} onManualSyncDog={syncNow} />
-      <CollarControlPanel dog={dog} onUpdateDogTelemetry={p.onUpdateDogTelemetry} onToggleDogAlert={p.onToggleDogAlert} onOpenIcarSync={() => onOpenSync(dog)} />
+      {canManage && (
+        <CollarControlPanel dog={dog} onUpdateDogTelemetry={p.onUpdateDogTelemetry} onToggleDogAlert={p.onToggleDogAlert} onOpenIcarSync={() => onOpenSync(dog)} />
+      )}
       <CollarTrackHistoryLog trackHistory={dog.trackHistory} />
 
       {p.isMyDog(dog) && (
         <Btn block onClick={() => { p.onUnshareDog(dog.id); onClose(); }}><Download className="h-4 w-4" />{s.toLibrary}</Btn>
       )}
 
-      <Btn variant="danger" block onClick={() => {
-        if (window.confirm(`${s.remove} “${dog.name}”?`)) { p.onDeleteDog(dog.id); onClose(); }
-      }}><Trash2 className="h-4 w-4" />{s.remove}</Btn>
+      {canManage && (
+        <Btn variant="danger" block onClick={() => {
+          if (window.confirm(`${s.remove} “${dog.name}”?`)) { p.onDeleteDog(dog.id); onClose(); }
+        }}><Trash2 className="h-4 w-4" />{s.remove}</Btn>
+      )}
     </div>
   );
 };

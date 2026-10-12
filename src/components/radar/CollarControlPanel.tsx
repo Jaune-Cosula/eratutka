@@ -17,7 +17,7 @@ interface CollarControlPanelProps {
   dog: Dog;
   onUpdateDogTelemetry?: (dogId: string, updates: Partial<Dog>) => void;
   onToggleDogAlert: (dogId: string, alertType: 'bark' | 'stand') => void;
-  onOpenIcarSync: () => void;
+  onOpenIcarSync?: () => void;
 }
 
 export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
@@ -302,7 +302,7 @@ export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
                 <Send className="w-3.5 h-3.5" />
                 <span>Lähetä SMS pantaan</span>
               </a>
-            ) : (
+            ) : onOpenIcarSync ? (
               <button
                 type="button"
                 onClick={onOpenIcarSync}
@@ -312,7 +312,7 @@ export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
                 <Phone className="w-3.5 h-3.5" />
                 <span>Lisää SIM-numero</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

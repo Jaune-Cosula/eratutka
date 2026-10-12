@@ -98,6 +98,8 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
   // falling back to the first dog here made that button appear to do nothing. With no
   // selection the panel shows its "pick a dog from the list" empty state instead.
   const selectedDog = dogs.find((d) => d.id === selectedDogId);
+  // Removing a collar or driving its settings is limited to its own device or the hunt master.
+  const canManageSelected = Boolean(selectedDog && (isMyDog?.(selectedDog) || isJahtimestari));
 
   const { syncNow, isSyncingGps, syncFeedback, clearFeedback } =
     useManualCollarSync(onUpdateDogTelemetry);
@@ -292,7 +294,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                       <span>Lopeta seuranta</span>
                     </button>
 
-                    {(isJahtimestari || onDeleteDog) && onDeleteDog && (
+                    {canManageSelected && onDeleteDog && (
                       <button
                         onClick={() => {
                           if (window.confirm(`Haluatko varmasti poistaa koiran "${selectedDog.name}" jahdista?`)) {
@@ -327,7 +329,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                       </button>
                     )}
 
-                    {onUpdateDogTelemetry && (
+                    {onUpdateDogTelemetry && canManageSelected && (
                       <button
                         onClick={() => setShowCollarSyncModal(true)}
                         className="px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center space-x-1.5 shadow bg-amber-500 hover:bg-amber-400 text-stone-950 cursor-pointer"
@@ -372,12 +374,14 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                 />
 
                 {/* Subcomponent 3: Tracking Interval Presets & Remote Collar TCP Commands & SMS Fallback & Audio Alerts */}
-                <CollarControlPanel
-                  dog={selectedDog}
-                  onUpdateDogTelemetry={onUpdateDogTelemetry}
-                  onToggleDogAlert={onToggleDogAlert}
-                  onOpenIcarSync={() => setShowCollarSyncModal(true)}
-                />
+                {canManageSelected && (
+                  <CollarControlPanel
+                    dog={selectedDog}
+                    onUpdateDogTelemetry={onUpdateDogTelemetry}
+                    onToggleDogAlert={onToggleDogAlert}
+                    onOpenIcarSync={() => setShowCollarSyncModal(true)}
+                  />
+                )}
 
                 {/* Subcomponent 4: Track History Points Log */}
                 <CollarTrackHistoryLog trackHistory={selectedDog.trackHistory} />
