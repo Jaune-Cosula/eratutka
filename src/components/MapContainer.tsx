@@ -134,7 +134,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const rulerPolylineRef = useRef<L.Polyline | null>(null);
   const rulerBadgeRef = useRef<L.Marker | null>(null);
   // Mittari distance rings, keyed by radius so a GPS tick moves them instead of rebuilding.
-  const rulerRingsRef = useRef<Map<number, { circle: L.Circle; label: L.Marker }>>(new Map());
+  const rulerRingsRef = useRef<Map<number, { circle: L.Circle; label: L.Marker | null }>>(new Map());
 
   const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState<boolean>(false);
@@ -1297,7 +1297,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     if (!rulerActive || !centre) {
       rings.forEach(({ circle, label }) => {
         layerGroup.removeLayer(circle);
-        layerGroup.removeLayer(label);
+        if (label) layerGroup.removeLayer(label);
       });
       rings.clear();
       return;
@@ -1310,10 +1310,14 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const color = isLimit ? '#dc2626' : '#f59e0b';
       const northLatLng: [number, number] = [centre.lat + radius / 111320, centre.lng];
 
+      // Evo keeps the map clean: every ring is drawn, but only the 150 m building limit is
+      // labelled. Classic labels every ring.
+      const wantLabel = isLimit || variant !== 'evo';
+
       const existing = rings.get(radius);
       if (existing) {
         existing.circle.setLatLng(centreLatLng);
-        existing.label.setLatLng(northLatLng);
+        if (existing.label) existing.label.setLatLng(northLatLng);
         return;
       }
 
@@ -1327,11 +1331,14 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         interactive: false,
       }).addTo(layerGroup);
 
-      const labelHtml = `<div style="color:${color};font-size:${isLimit ? 10 : 9}px;font-weight:${isLimit ? 800 : 600};font-family:ui-monospace,Menlo,monospace;text-shadow:0 1px 2px rgba(0,0,0,0.85);">${formatDistance(radius)}${isLimit ? ' ⚠' : ''}</div>`;
-      const label = L.marker(northLatLng, {
-        icon: L.divIcon({ html: labelHtml, className: 'ruler-ring-label', iconSize: [60, 14], iconAnchor: [30, 7] }),
-        interactive: false,
-      }).addTo(layerGroup);
+      let label: L.Marker | null = null;
+      if (wantLabel) {
+        const labelHtml = `<div style="color:${color};font-size:${isLimit ? 10 : 9}px;font-weight:${isLimit ? 800 : 600};font-family:ui-monospace,Menlo,monospace;text-shadow:0 1px 2px rgba(0,0,0,0.85);">${formatDistance(radius)}${isLimit ? ' ⚠' : ''}</div>`;
+        label = L.marker(northLatLng, {
+          icon: L.divIcon({ html: labelHtml, className: 'ruler-ring-label', iconSize: [60, 14], iconAnchor: [30, 7] }),
+          interactive: false,
+        }).addTo(layerGroup);
+      }
 
       rings.set(radius, { circle, label });
     });

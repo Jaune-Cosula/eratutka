@@ -3,7 +3,6 @@ import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, Chevron
 import { MapContainer } from '../../components/MapContainer';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } from '../core';
-import { calculateDistance, formatDistance, RING_RADII, RING_LIMIT_M } from '../../utils/geoUtils';
 
 /**
  * The field view. The map itself is the real, shared <MapContainer> in its "evo"
@@ -14,7 +13,7 @@ import { calculateDistance, formatDistance, RING_RADII, RING_LIMIT_M } from '../
  * with the full collar list one tap away. Most of the screen stays map.
  */
 export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
-  const { s, lang } = useEvo();
+  const { s } = useEvo();
   const [radarOn, setRadarOn] = useState(false);
   const [ruler, setRuler] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
@@ -66,27 +65,12 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
 
       {/* Overlays — positioned over the full-bleed map, inside the viewport */}
       <div className="pointer-events-none absolute inset-0">
-        {/* Mittari legend: ring radii plus the measured distance, only while the tool is on. */}
+        {/* Mittari: only the 150 m building-limit is called out as text; the map still draws
+            all the distance rings (MapContainer does that). */}
         {ruler && (
-          <div className="pointer-events-auto absolute left-3 top-3 w-40 rounded-[12px] border p-3 text-[11px]" style={{ borderColor: 'var(--e-border-soft)', background: 'var(--e-surface-2)', backdropFilter: 'blur(8px)' }}>
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-black uppercase tracking-wide" style={{ color: 'var(--e-signal)' }}>📏 {s.distance}</span>
-              {p.activeRulerPoint && (
-                <button onClick={() => p.setActiveRulerPoint(null)} title={s.recenter} aria-label={s.recenter} style={{ color: 'var(--e-text-3)' }}>✕</button>
-              )}
-            </div>
-            <ul className="evo-mono space-y-0.5">
-              {RING_RADII.map((r) => (
-                <li key={r} style={{ color: r === RING_LIMIT_M ? 'var(--e-alert)' : 'var(--e-text-2)', fontWeight: r === RING_LIMIT_M ? 800 : 600 }}>
-                  {formatDistance(r)}{r === RING_LIMIT_M ? ' ⚠' : ''}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-1.5 text-[10px] leading-snug" style={{ color: 'var(--e-text-3)' }}>
-              {p.activeRulerPoint && p.userLocation
-                ? `${s.distance}: ${formatDistance(calculateDistance(p.userLocation.lat, p.userLocation.lng, p.activeRulerPoint.lat, p.activeRulerPoint.lng))}`
-                : (lang === 'fi' ? 'Napauta karttaa siirtääksesi renkaat' : 'Tap the map to move the rings')}
-            </div>
+          <div className="pointer-events-auto absolute left-3 top-3 flex items-center gap-2 rounded-[10px] border px-3 py-2 text-[10.5px] font-bold" style={{ borderColor: 'rgba(239,68,68,.5)', background: 'var(--e-surface-2)', backdropFilter: 'blur(8px)', color: 'var(--e-alert)' }}>
+            <span className="inline-block h-3 w-3 rounded-full border border-dashed" style={{ borderColor: 'var(--e-alert)' }} />
+            {s.buildingLimit}
           </div>
         )}
 
