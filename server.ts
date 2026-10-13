@@ -114,7 +114,7 @@ const MIN_PLAUSIBLE_TIMESTAMP_MS = 946684800000;
  * that starting the app next to a collar that barked hours ago does not announce a bark.
  * 3 minutes accommodates cellular latency and polling intervals in the terrain.
  */
-const BARK_EVENT_MAX_AGE_MS = 180 * 1000;
+const BARK_EVENT_MAX_AGE_MS = 300 * 1000;
 
 /**
  * How long a bark stays "live" after its timestamp. Deliberately TIME-based, not a count of

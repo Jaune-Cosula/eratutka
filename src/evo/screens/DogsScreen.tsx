@@ -9,6 +9,7 @@ import { CollarTrackHistoryLog } from '../../components/radar/CollarTrackHistory
 import { CollarSyncModal } from '../../components/CollarSyncModal';
 import { useManualCollarSync } from '../../hooks/useManualCollarSync';
 import { colorsUsedByOthers } from '../../data/dogColors';
+import { calculateTotalBarkMs, formatBarkDuration } from '../../utils/geoUtils';
 
 const toneColor = (t: string) => (t === 'live' ? 'var(--e-live)' : t === 'info' ? 'var(--e-info)' : t === 'alert' ? 'var(--e-alert)' : 'var(--e-text-2)');
 
@@ -58,6 +59,10 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
                   <span className="flex items-center gap-1" style={{ color: toneColor(dogStatusTone(dog.status)) }}><PawPrint className="h-3 w-3" />{dogStatusLabel(dog.status, s)}</span>
                   <span className="flex items-center gap-1" style={{ color: 'var(--e-text-2)' }}><Battery className="h-3 w-3" />{dog.battery}%</span>
                   <span className="flex items-center gap-1" style={{ color: 'var(--e-text-2)' }}><Signal className="h-3 w-3" />{dog.signal}%</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 text-[10.5px] font-bold" style={{ color: 'var(--e-text-3)' }}>
+                  <span>🔊 {s.totalBarked}: {formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</span>
+                  {dog.lastBarkTimestamp ? <span>· {s.lastBark} {timeAgo(dog.lastBarkTimestamp, lang)}</span> : null}
                 </div>
               </div>
               <div className="flex-none text-right">
@@ -117,7 +122,7 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
 };
 
 const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => void; onOpenSync: (dog: Dog) => void }> = ({ dog, p, nav, onClose, onOpenSync }) => {
-  const { s } = useEvo();
+  const { s, lang } = useEvo();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
   const hidden = p.hiddenDogIds.includes(dog.id);
   // Only the collar's own device or the hunt master may remove it or drive its settings;
@@ -137,6 +142,11 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
       </div>
 
       <CollarTelemetryGauges dog={dog} userLocation={p.userLocation} onUpdateDogTelemetry={p.onUpdateDogTelemetry} />
+
+      <div className="evo-card flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12px]">
+        <span style={{ color: 'var(--e-text-2)' }}>🔊 {s.totalBarked}: <b style={{ color: 'var(--e-text)' }}>{formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</b></span>
+        {dog.lastBarkTimestamp ? <span style={{ color: 'var(--e-text-3)' }}>{s.lastBark}: {timeAgo(dog.lastBarkTimestamp, lang)}</span> : null}
+      </div>
 
       <div className="flex gap-2">
         <Btn block onClick={() => { p.setSelectedDogId(dog.id); p.setMapFocusTarget({ lat: dog.lat, lng: dog.lng }); nav.goMap(); onClose(); }}><MapPin className="h-4 w-4" />{s.map}</Btn>

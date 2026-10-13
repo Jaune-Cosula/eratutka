@@ -285,6 +285,34 @@ export const RING_RADII = [50, 100, 150, 500, 1000, 2000];
 export const RING_LIMIT_M = 150;
 
 /**
+ * Rough total time (ms) the collar has been barking, from the retained track: each gap whose
+ * starting point was a bark (barkRate > 0) is counted, capped so a long gap between two fixes
+ * is never counted whole. Trials count barked minutes, so this gives an in-app estimate.
+ */
+export function calculateTotalBarkMs(history?: DogTrackPoint[]): number {
+  if (!Array.isArray(history) || history.length < 2) return 0;
+  let ms = 0;
+  for (let i = 0; i < history.length - 1; i++) {
+    const a = history[i];
+    const b = history[i + 1];
+    if ((a.barkRate || 0) > 0) {
+      const dt = b.timestamp - a.timestamp;
+      if (dt > 0) ms += Math.min(dt, 120000);
+    }
+  }
+  return ms;
+}
+
+/** Formats a barked-time estimate as "N min" or "H h M min". */
+export function formatBarkDuration(ms: number): string {
+  const totalMin = Math.floor((ms || 0) / 60000);
+  if (totalMin <= 0) return ms > 0 ? '<1 min' : '0 min';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h} h ${m} min` : `${totalMin} min`;
+}
+
+/**
  * Prunes expired dog track history points older than maxAgeMs (default 12 hours).
  * Also filters out any invalid/NaN coordinates or (0,0).
  */

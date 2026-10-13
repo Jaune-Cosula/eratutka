@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Dog, UserLocation } from '../../types';
-import { calculateDistance, calculateBearing, formatDistance } from '../../utils/geoUtils';
+import { calculateDistance, calculateBearing, formatDistance, calculateTotalBarkMs, formatBarkDuration } from '../../utils/geoUtils';
 import { Compass, Battery, Clock, User, Trash2 } from 'lucide-react';
 import { formatTimeAgo } from '../DogRadarPanel';
 
@@ -187,18 +187,22 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                         {bearing !== null && <span className="text-[10px] text-stone-400">({bearing}°)</span>}
                       </span>
                     )}
-                    {dog.status !== 'haukkuu' && dog.lastBarkTimestamp && (
-                      <span
-                        className={`text-[10px] font-mono flex items-center space-x-1 ${
-                          Date.now() - dog.lastBarkTimestamp < 5 * 60 * 1000
-                            ? 'text-amber-400 font-semibold'
-                            : 'text-stone-400'
-                        }`}
-                        title={`Viimeisin haukku: ${new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
-                      >
-                        <span>🔊 Viim. {new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {/* Bark summary. Trials count barked minutes, so show the total barked
+                        time for the hunt plus when the dog last barked, even if that was
+                        minutes ago while the phone was in a pocket. */}
+                    <span className="text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 text-stone-400">
+                      <span title="Arvio haukutusta ajasta (kulkuhistoriasta)">
+                        🔊 Haukuttu: <strong className={dog.status === 'haukkuu' ? 'text-red-400' : 'text-amber-300'}>{formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</strong>
                       </span>
-                    )}
+                      {dog.lastBarkTimestamp ? (
+                        <span
+                          className={Date.now() - dog.lastBarkTimestamp < 5 * 60 * 1000 ? 'text-amber-400 font-semibold' : ''}
+                          title={`Viimeisin haukku: ${new Date(dog.lastBarkTimestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+                        >
+                          · Viim. {formatTimeAgo(dog.lastBarkTimestamp)}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
 
                   {onDeleteDog && (
