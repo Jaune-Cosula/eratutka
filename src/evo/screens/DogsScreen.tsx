@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Eye, EyeOff, RotateCcw, Radio, Phone } from 'lucide-react';
+import { Plus, Battery, Signal, Trash2, MapPin, Download, PawPrint, Eye, EyeOff, RotateCcw, Radio, Phone, UserCheck } from 'lucide-react';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, dogStatusTone, timeAgo, Sheet, Btn } from '../core';
 import { CollarTelemetryGauges } from '../../components/radar/CollarTelemetryGauges';
@@ -183,6 +183,10 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
         <CollarControlPanel dog={dog} onUpdateDogTelemetry={p.onUpdateDogTelemetry} onToggleDogAlert={p.onToggleDogAlert} onOpenIcarSync={() => onOpenSync(dog)} />
       )}
       <CollarTrackHistoryLog trackHistory={dog.trackHistory} />
+
+      {!p.isMyDog(dog) && (
+        <Btn block onClick={() => p.onClaimDog(dog.id)}><UserCheck className="h-4 w-4" />{s.claimCollar}</Btn>
+      )}
 
       {p.isMyDog(dog) && (
         <Btn block onClick={() => { p.onUnshareDog(dog.id); onClose(); }}><Download className="h-4 w-4" />{s.toLibrary}</Btn>

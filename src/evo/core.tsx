@@ -43,7 +43,7 @@ export const fi = {
   showOnMap: 'Näytä kartalla', hideOnMap: 'Piilota kartalta', hidden: 'Piilotettu', shareInHunt: 'Jaa jahdissa',
   myDog: 'Oma panta', telemetry: 'Telemetria', track: 'Reitti', diagnostics: 'Diagnostiikka',
   refreshNow: 'Päivitä heti', refreshing: 'Päivitetään…', callCollar: 'Soita pantaan', collarConnection: 'Pannan GPS-yhteys',
-  stopTracking: 'Lopeta seuranta', theme: 'Teema', lastBark: 'Viim. haukku', totalBarked: 'Haukuttu yhteensä',
+  stopTracking: 'Lopeta seuranta', theme: 'Teema', lastBark: 'Viim. haukku', totalBarked: 'Haukuttu yhteensä', claimCollar: 'Merkitse omaksi pannaksi',
   visibility: 'Näkyvyys', dogTracks: 'Koirien reitit', hunterNames: 'Passimiesten nimet', safetySectors: 'Turvasektorit',
 
   teamTitle: 'Jahtiporukka', owner: 'Jahtimestari', role: 'Rooli',
@@ -94,7 +94,7 @@ export const en: EvoStrings = {
   showOnMap: 'Show on map', hideOnMap: 'Hide from map', hidden: 'Hidden', shareInHunt: 'Share in hunt',
   myDog: 'My collar', telemetry: 'Telemetry', track: 'Track', diagnostics: 'Diagnostics',
   refreshNow: 'Refresh now', refreshing: 'Refreshing…', callCollar: 'Call collar', collarConnection: 'Collar GPS',
-  stopTracking: 'Stop tracking', theme: 'Theme', lastBark: 'Last bark', totalBarked: 'Total barked',
+  stopTracking: 'Stop tracking', theme: 'Theme', lastBark: 'Last bark', totalBarked: 'Total barked', claimCollar: 'Mark as my collar',
   visibility: 'Visibility', dogTracks: 'Dog tracks', hunterNames: 'Hunter names', safetySectors: 'Safety sectors',
 
   teamTitle: 'Hunting party', owner: 'Hunt master', role: 'Role',
@@ -321,6 +321,8 @@ export interface EvoProps {
   onToggleDogVisibility: (dogId: string) => void;
   onUnshareDog: (dogId: string) => void;
   onShareLibraryDog: (dog: Dog) => void;
+  /** Marks a collar as managed by this device (grants edit/delete on it). */
+  onClaimDog: (dogId: string) => void;
   onDeleteDog: (dogId: string, options?: { keepSaved?: boolean }) => void;
   onToggleDogAlert: (dogId: string, type: 'bark' | 'stand') => void;
   onUpdateDogTelemetry: (dogId: string, updates: Partial<Dog>) => void;

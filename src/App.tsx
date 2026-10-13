@@ -154,6 +154,14 @@ export default function App() {
           const hiddenByDeletion = restored.filter((dog) => isDogDeleted(dog));
           const fresh = restored.filter((dog) => !isDogDeleted(dog));
 
+          // The account's own saved collars are the user's, so this device manages them too.
+          // Without this, a collar restored from the account (new phone, tablet, spare phone)
+          // was not recognised as "mine", and its GPS-settings / edit / delete stayed hidden.
+          if (restored.length > 0) {
+            const restoredIds = restored.map((d) => d.id);
+            setMyDogIds((prev) => Array.from(new Set([...prev, ...restoredIds])));
+          }
+
           hiddenByDeletion.forEach((dog) => handleAddDogRef.current(dog));
 
           // Merging rather than adding keeps the freshest telemetry: the cloud copy may be
@@ -1141,6 +1149,7 @@ export default function App() {
     onToggleDogVisibility: handleToggleDogVisibility,
     onUnshareDog: handleUnshareDog,
     onShareLibraryDog: handleShareLibraryDog,
+    onClaimDog: rememberMyDog,
     onDeleteDog: handleDeleteDog,
     onToggleDogAlert: handleToggleDogAlert,
     onUpdateDogTelemetry: handleUpdateDogTelemetry,
