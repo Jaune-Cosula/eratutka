@@ -117,6 +117,15 @@ const MIN_PLAUSIBLE_TIMESTAMP_MS = 946684800000;
 const BARK_EVENT_MAX_AGE_MS = 180 * 1000;
 
 /**
+ * How long a bark stays "live" after its timestamp. Deliberately TIME-based, not a count of
+ * remaining fixes: the gateway pushes positions to /api/gps/update AND the app pulls them from
+ * /api/gateway/sync, and a shared "remaining fixes" counter was decremented by BOTH writers,
+ * so a single bark could be consumed down to zero before the app's next 5 s poll and vanish —
+ * the bark "flashed" and then disappeared as soon as the next update landed.
+ */
+const BARK_HOLD_MS = 25 * 1000;
+
+/**
  * Parses a numeric query parameter into a bounded integer. A garbage value previously
  * became NaN, and NaN then slipped through Math.min/Math.max: `limit` of NaN turned
  * `slice(-NaN)` into "return everything", and NaN `hours`/`since` silently produced an
@@ -989,8 +998,8 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
         effectiveBarkRate = foundBarkRate;
         effectiveIsBarking = true;
         foundStatus = 'haukkuu';
-      } else if (existingRec && (existingRec.barkHoldRemainingFixes || 0) > 0) {
-        barkHoldFixes = (existingRec.barkHoldRemainingFixes || 1) - 1;
+      } else if (existingRec && existingRec.lastBarkTimestamp && Date.now() - existingRec.lastBarkTimestamp < BARK_HOLD_MS) {
+        barkHoldFixes = 3;
         effectiveBarkRate = recentBark || existingRec.barkRate || 15;
         effectiveIsBarking = true;
         foundStatus = 'haukkuu';
@@ -1323,8 +1332,8 @@ const handleGpsIngest = (req: express.Request, res: express.Response) => {
     effectiveBarkRate = rawBarkRate;
     effectiveIsBarking = true;
     status = 'haukkuu';
-  } else if (existingRec && (existingRec.barkHoldRemainingFixes || 0) > 0) {
-    barkHoldFixes = (existingRec.barkHoldRemainingFixes || 1) - 1;
+  } else if (existingRec && existingRec.lastBarkTimestamp && Date.now() - existingRec.lastBarkTimestamp < BARK_HOLD_MS) {
+    barkHoldFixes = 3;
     effectiveBarkRate = recentBark || existingRec.barkRate || 15;
     effectiveIsBarking = true;
     status = 'haukkuu';
@@ -1502,8 +1511,8 @@ app.post('/api/gps/simulate', (req, res) => {
     effectiveBarkRate = rawBark;
     effectiveIsBarking = true;
     status = 'haukkuu';
-  } else if (existingRec && (existingRec.barkHoldRemainingFixes || 0) > 0) {
-    barkHoldFixes = (existingRec.barkHoldRemainingFixes || 1) - 1;
+  } else if (existingRec && existingRec.lastBarkTimestamp && Date.now() - existingRec.lastBarkTimestamp < BARK_HOLD_MS) {
+    barkHoldFixes = 3;
     effectiveBarkRate = recentBark || existingRec.barkRate || 15;
     effectiveIsBarking = true;
     status = 'haukkuu';

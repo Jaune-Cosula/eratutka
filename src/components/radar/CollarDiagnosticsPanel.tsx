@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Dog } from '../../types';
-import { lastGatewayResponses } from '../../services/collarService';
+import { gatewayPollLog } from '../../services/collarService';
 import {
   Cpu,
   Satellite,
@@ -307,20 +307,22 @@ export const CollarDiagnosticsPanel: React.FC<CollarDiagnosticsPanelProps> = ({
             {/* TEMPORARY DEBUG — poista kun haukun näkyminen on varmistettu. */}
             {(() => {
               const polledId = (dog.directGpsId || dog.imei || dog.collarId || '').replace(/^ID[:\s]*/i, '').trim();
-              const resp = polledId ? lastGatewayResponses.get(polledId) : undefined;
+              const log = (polledId ? gatewayPollLog.get(polledId) : undefined) || [];
+              const recent = log.slice(-8).reverse();
               const age = (t?: number) =>
                 typeof t === 'number' ? Math.max(0, Math.round((Date.now() - t) / 1000)) + ' s sitten' : '—';
               return (
                 <div className="mt-2 p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/50 font-mono text-[10.5px] text-amber-200 leading-relaxed">
                   <div className="font-bold text-amber-300 mb-0.5">DEBUG (väliaikainen)</div>
                   <div>tila={String(dog.status)} · haukku={dog.barkRate} · hold={dog.barkHoldRemainingFixes ?? '—'} · viim. haukku={dog.lastBarkTimestamp ? age(dog.lastBarkTimestamp) : '—'}</div>
-                  <div>kysytty id={polledId || '—'} · päivitetty={age(dog.lastUpdated)} · rawPayload={dog.rawPayload ? 'kyllä' : 'ei'}</div>
-                  <div>
-                    viim. gateway-vastaus:{' '}
-                    {resp
-                      ? `status=${String(resp.status)} · barkRate=${String(resp.barkRate)} · isBarking=${String(resp.isBarking)} · raw=${resp.hasRawPayload ? 'kyllä' : 'ei'} · ${age(resp.at)} (${resp.keys.length} kenttää)`
-                      : 'ei vielä'}
-                  </div>
+                  <div>kysytty id={polledId || '—'} · rawPayload={dog.rawPayload ? 'kyllä' : 'ei'} · pollauksia lokissa={log.length}</div>
+                  <div className="mt-1 font-bold text-amber-300">Viimeisimmät pollaukset (uusin ensin):</div>
+                  {recent.length === 0 && <div>—</div>}
+                  {recent.map((e, i) => (
+                    <div key={i}>
+                      {age(e.at)} · status={String(e.status)} · bark={String(e.barkRate)} · hold={String(e.barkHoldRemainingFixes)} · raw={e.hasRawPayload ? 'kyllä' : 'ei'}
+                    </div>
+                  ))}
                 </div>
               );
             })()}

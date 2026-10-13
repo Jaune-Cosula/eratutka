@@ -42,28 +42,38 @@ export interface DevicePositionResult {
 }
 
 /**
- * The most recent gateway response per device, kept only so the collar diagnostics can show
- * what the app actually received during a bark. Temporary debug aid, not used for logic.
+ * A rolling log of the last few gateway responses per device, kept only so the collar
+ * diagnostics can show what the app actually received during a bark. Temporary debug aid,
+ * not used for logic.
  */
 export interface LastGatewayResponse {
   at: number;
   status?: string;
   barkRate?: number;
   isBarking?: boolean;
+  barkHoldRemainingFixes?: number;
+  lastBarkTimestamp?: number;
   hasRawPayload: boolean;
   keys: string[];
 }
-export const lastGatewayResponses = new Map<string, LastGatewayResponse>();
+const POLL_LOG_MAX = 15;
+export const gatewayPollLog = new Map<string, LastGatewayResponse[]>();
 
 function recordGatewayResponse(id: string, data: DevicePositionResult | null): void {
-  lastGatewayResponses.set(id, {
+  const entry: LastGatewayResponse = {
     at: Date.now(),
-    status: data?.status,
+    status: (data as any)?.status,
     barkRate: data?.barkRate,
     isBarking: data?.isBarking,
+    barkHoldRemainingFixes: (data as any)?.barkHoldRemainingFixes,
+    lastBarkTimestamp: (data as any)?.lastBarkTimestamp,
     hasRawPayload: Boolean(data?.rawPayload),
     keys: data ? Object.keys(data) : [],
-  });
+  };
+  const arr = gatewayPollLog.get(id) || [];
+  arr.push(entry);
+  if (arr.length > POLL_LOG_MAX) arr.splice(0, arr.length - POLL_LOG_MAX);
+  gatewayPollLog.set(id, arr);
 }
 
 /**
