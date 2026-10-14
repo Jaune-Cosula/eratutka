@@ -58,6 +58,23 @@ function gatewayAuthHeader(): Record<string, string> {
   return GATEWAY_SECRET ? { 'X-Gateway-Secret': GATEWAY_SECRET } : {};
 }
 
+/**
+ * Phase 2 (H2): device HTTP ingest is reachable only through the self-hosted gateway, which
+ * forwards with the shared X-Gateway-Secret (see gatewayAuthHeader). A browser or direct caller
+ * cannot forge it. Env-gated: an empty secret leaves the gate open, so the secret can be set on
+ * both services before enforcement.
+ */
+function requireGatewaySecret(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!GATEWAY_SECRET) return next();
+  const provided = String(req.get('x-gateway-secret') || '');
+  if (provided && safeEqualString(provided, GATEWAY_SECRET)) return next();
+  return res.status(401).json({
+    success: false,
+    error: 'GATEWAY_SECRET_REQUIRED',
+    message: 'Lähetä GPS-data Gatewayn kautta (X-Gateway-Secret puuttuu tai on virheellinen).',
+  });
+}
+
 // In-memory live store for direct GPS devices reporting to Erätutka
 interface DirectGpsRecord {
   id: string;
@@ -114,6 +131,7 @@ export interface GpsPointHistoryRecord {
 
 const gpsHistoryStore = new Map<string, GpsPointHistoryRecord[]>();
 const MAX_HISTORY_POINTS_PER_DEVICE = 5000; // ~12-18 hours at 5-10s interval
+const GPS_HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // drop a device's history after it goes silent
 
 /**
  * Both in-memory stores are keyed by device, and nothing ever removed a device: over a
@@ -141,8 +159,12 @@ setInterval(() => {
     }
   }
 
+  // History previously leaked keys for devices that reported once and went silent (only empty
+  // lists were removed). Prune by last-seen so a long-running server stays bounded.
+  const historyCutoff = Date.now() - GPS_HISTORY_TTL_MS;
   for (const [deviceId, points] of gpsHistoryStore.entries()) {
-    if (!points || points.length === 0) {
+    const last = points && points.length ? points[points.length - 1] : null;
+    if (!last || typeof last.timestamp !== 'number' || !isFinite(last.timestamp) || last.timestamp < historyCutoff) {
       gpsHistoryStore.delete(deviceId);
     }
   }
@@ -184,6 +206,12 @@ function parseBoundedInt(raw: unknown, fallback: number, min: number, max: numbe
   const num = Number(raw);
   if (!isFinite(num)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(num)));
+}
+
+/** Logs the real error server-side; never echoes it to the client (paths, upstream bodies). */
+function serverError(res: express.Response, err: unknown, publicMessage: string) {
+  console.error('[eratutka:500]', publicMessage, err);
+  return res.status(500).json({ success: false, error: 'SERVER_ERROR', message: publicMessage });
 }
 
 /**
@@ -1428,6 +1456,9 @@ const handleGpsIngest = (req: express.Request, res: express.Response) => {
   });
 };
 
+// Phase 2 (H2): device HTTP ingest is gateway-only.
+app.use(['/api/gps/update', '/api/gps/report', '/api/gps/position'], requireGatewaySecret);
+
 app.get('/api/gps/update', handleGpsIngest);
 app.post('/api/gps/update', handleGpsIngest);
 app.get('/api/gps/report', handleGpsIngest);
@@ -1477,7 +1508,7 @@ app.get('/api/gps/history/:id', async (req, res) => {
       points: filtered,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    return serverError(res, error, 'Sijaintihistorian haku epäonnistui.');
   }
 });
 
@@ -1534,10 +1565,37 @@ app.get('/api/gps/device/:id', async (req, res) => {
 });
 
 // API: Query all active direct devices
+// Phase 2 (H4): project only safe telemetry. The full record carries `raw`/`rawPayload` and
+// `tractiveInfo` (incl. the Tractive bearer token / shareUrl) - those must not reach a caller
+// just because they hold a hunt key. `/api/gps/device/:id` (owner diagnostics) keeps them.
 app.get('/api/gps/devices', (req, res) => {
+  const now = Date.now();
   const devices = Array.from(directGpsStore.values()).map((rec) => ({
-    ...rec,
-    ageSeconds: Math.round((Date.now() - rec.timestamp) / 1000),
+    id: rec.id,
+    lat: rec.lat,
+    lng: rec.lng,
+    speed: rec.speed,
+    battery: rec.battery,
+    heading: rec.heading,
+    altitude: rec.altitude,
+    barkRate: rec.barkRate,
+    barkHoldRemainingFixes: rec.barkHoldRemainingFixes,
+    lastBarkTimestamp: rec.lastBarkTimestamp,
+    recentBarkRate: rec.recentBarkRate,
+    isBarking: rec.isBarking,
+    status: rec.status,
+    timestamp: rec.timestamp,
+    source: rec.source,
+    satellites: rec.satellites,
+    gsmSignalCsq: rec.gsmSignalCsq,
+    gsmSignalDb: rec.gsmSignalDb,
+    networkStatus: rec.networkStatus,
+    fixMode: rec.fixMode,
+    voltage: rec.voltage,
+    hdop: rec.hdop,
+    protocolName: rec.protocolName,
+    lastPacketLatencySec: Math.max(0, Math.round((now - rec.timestamp) / 1000)),
+    ageSeconds: Math.round((now - rec.timestamp) / 1000),
   }));
   return res.json({ success: true, count: devices.length, devices });
 });
@@ -1740,7 +1798,7 @@ app.all('/api/tractive/sync', async (req, res) => {
       isOnline: true,
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || 'Virhe Tractive-haussa' });
+    return serverError(res, err, 'Virhe Tractive-haussa.');
   }
 });
 
@@ -1754,7 +1812,7 @@ app.get('/api/tractive/share/:token', async (req, res) => {
     }
     return res.json({ success: true, record });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return serverError(res, err, 'Tractive-jakolinkin haku epäonnistui.');
   }
 });
 
@@ -2062,23 +2120,13 @@ function getProvidedHuntKey(req: express.Request): string {
   return typeof body.huntKey === 'string' ? body.huntKey.trim() : '';
 }
 
-function getProvidedPin(req: express.Request): string {
-  const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
-  const raw = body.password ?? body.pin;
-  return typeof raw === 'string' ? raw.trim() : '';
-}
-
-/** True when the caller proved knowledge of the key or of the code+PIN pair. */
-function sessionAccessGranted(req: express.Request, data: LiveSessionData): boolean {
+/**
+ * True when the caller presented the session's capability key. Relay and delete accept only the
+ * key - never a PIN - so the only PIN oracle is /api/session/resolve, which is rate-limited.
+ */
+function sessionKeyGranted(req: express.Request, data: LiveSessionData): boolean {
   const providedKey = getProvidedHuntKey(req);
-  if (providedKey && data.huntKey && safeEqualString(providedKey, data.huntKey)) {
-    return true;
-  }
-  const pin = getProvidedPin(req);
-  if (pin && data.pinHash && data.pinSalt && safeEqualHex(hashPin(pin, data.pinSalt), data.pinHash)) {
-    return true;
-  }
-  return false;
+  return Boolean(providedKey && data.huntKey && safeEqualString(providedKey, data.huntKey));
 }
 
 function denySessionAccess(res: express.Response, message: string) {
@@ -2219,6 +2267,26 @@ function dogPseudonym(secret: string, value: string): string {
     .slice(0, 24);
 }
 
+/**
+ * Finds the stored dog matching any spelling of a raw identifier, for the H3 ownership check.
+ * Mirrors `deletedIdVariants` normalization so a delete by any spelling maps to the same dog.
+ */
+function findStoredDogForId(dogs: any[], rawId: string): any | undefined {
+  const variants = new Set(deletedIdVariants(rawId).map((v) => v.toLowerCase()));
+  for (const dog of dogs || []) {
+    const ids = [dog?.id, dog?.collarId, dog?.directGpsId, dog?.imei, dog?.tractiveTrackerId, dog?.tractiveShareUrl];
+    for (const idRaw of ids) {
+      if (!idRaw) continue;
+      const value = String(idRaw).trim().toLowerCase();
+      if (!value) continue;
+      if (variants.has(value)) return dog;
+      const clean = value.replace(/^id[:\s]*/i, '').trim();
+      if (clean && variants.has(clean)) return dog;
+    }
+  }
+  return undefined;
+}
+
 /** Marks one identifier as deleted, in every spelling. */
 function markDeletedOnServer(deletedSet: Set<string>, rawId: string): void {
   for (const variant of deletedIdVariants(rawId)) deletedSet.add(variant);
@@ -2316,7 +2384,7 @@ app.post('/api/session/create', (req, res) => {
 
     return res.json({ success: true, code, huntKey });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return serverError(res, err, 'Jahtisession luonti epäonnistui.');
   }
 });
 
@@ -2365,7 +2433,7 @@ app.post('/api/session/resolve', (req, res) => {
 
     return res.json({ success: true, code, huntKey: data.huntKey, sessionInfo: info });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return serverError(res, err, 'Jahtisession avaus epäonnistui.');
   }
 });
 
@@ -2387,7 +2455,7 @@ app.post('/api/session/:code/dogs/delete', (req, res) => {
     if (!existing) {
       return res.json({ success: true, deletedCount: 0, remainingDogs: 0, deletedDogIds: [] });
     }
-    if (!sessionAccessGranted(req, existing)) {
+    if (!sessionKeyGranted(req, existing)) {
       return denySessionAccess(res, 'Ei oikeutta tähän jahtiin.');
     }
     if (!existing.deletedDogIds) {
@@ -2398,6 +2466,22 @@ app.post('/api/session/:code/dogs/delete', (req, res) => {
       ...(Array.isArray(deletedIds) ? deletedIds : []),
       dogId,
     ].filter(Boolean).map((s: string) => String(s).trim());
+
+    // Phase 2 (H3): soft ownership boundary. The hunt key is shared, so a caller's uid is
+    // spoofable - this stops the honest cross-participant case, not a determined attacker.
+    // Legacy dogs without addedByUid are grandfathered (allowed).
+    const callerUid = String((req.body && (req.body.uid || req.body.addedByUid)) || '').trim();
+    for (const raw of idsToPurge) {
+      const stored = findStoredDogForId(existing.dogs, raw);
+      const owner = stored && typeof stored.addedByUid === 'string' ? stored.addedByUid.trim() : '';
+      if (owner && owner !== callerUid) {
+        return res.status(403).json({
+          success: false,
+          error: 'DOG_NOT_OWNED_BY_CALLER',
+          message: 'Koiran lisäsi toinen käyttäjä; vain lisääjä voi poistaa sen.',
+        });
+      }
+    }
 
     for (const raw of idsToPurge) {
       if (!raw) continue;
@@ -2425,7 +2509,7 @@ app.post('/api/session/:code/dogs/delete', (req, res) => {
       ),
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return serverError(res, err, 'Koiran poisto epäonnistui.');
   }
 });
 
@@ -2441,19 +2525,19 @@ app.post('/api/session/:code/relay', (req, res) => {
     const { sessionInfo, dogs, annotations, members, radioMessages, clientId, revivedDogIds } = req.body;
     const now = Date.now();
 
-    let existing = sessionLiveStore.get(code);
+    const existing = sessionLiveStore.get(code);
     if (!existing) {
-      // Re-registration path. A session normally exists in memory unless the server was
-      // restarted, in which case the first push may re-establish it — but only when it
-      // carries a well-formed capability key. Knowing the key is already proof of access,
-      // so no PIN is required here.
-      const providedKey = getProvidedHuntKey(req);
-      if (!HUNT_KEY_PATTERN.test(providedKey)) {
-        return denySessionAccess(res, 'Jahtisessio ei ole enää palvelimella. Liity uudelleen jakolinkillä.');
-      }
-      existing = createSessionRecord(code, providedKey, getProvidedPin(req));
-      sessionLiveStore.set(code, existing);
-    } else if (!sessionAccessGranted(req, existing)) {
+      // Phase 2 (H5): a client-supplied key must never mint a session. Previously any
+      // well-formed 32-hex key re-created the record, so anyone who knew (or guessed) a code
+      // could invent a key and become that code's session authority. Sessions are created only
+      // by /api/session/create; a session lost to a server restart must be recreated by its owner.
+      return res.status(403).json({
+        success: false,
+        error: 'SESSION_UNKNOWN',
+        message: 'Jahtisessio ei ole enää palvelimella. Jahtipäivän luojan on luotava jahti uudelleen; muut liittyvät uudelleen koodilla ja PIN-koodilla tai jakolinkillä.',
+      });
+    }
+    if (!sessionKeyGranted(req, existing)) {
       return denySessionAccess(res, 'Ei oikeutta tähän jahtiin.');
     }
     if (!existing.deletedDogIds) {
@@ -2542,7 +2626,7 @@ app.post('/api/session/:code/relay', (req, res) => {
       activeClientsCount: existing.activeClients.size,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    return serverError(res, error, 'Relay-push epäonnistui.');
   }
 });
 
@@ -2559,7 +2643,7 @@ app.get('/api/session/:code/relay', (req, res) => {
     const data = sessionLiveStore.get(code);
     // A missing session and an unauthorized one get the identical response, so that
     // polling cannot be used to learn which session codes exist.
-    if (!data || !sessionAccessGranted(req, data)) {
+    if (!data || !sessionKeyGranted(req, data)) {
       return res.json({
         success: true,
         exists: false,
@@ -2623,7 +2707,7 @@ app.get('/api/session/:code/relay', (req, res) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    return serverError(res, error, 'Relay-haku epäonnistui.');
   }
 });
 
@@ -2634,7 +2718,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.16';
+const ERATUTKA_VERSION = '2.7.17';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {

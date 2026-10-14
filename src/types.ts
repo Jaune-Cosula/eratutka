@@ -35,6 +35,7 @@ export interface Dog {
   imei?: string; // 15-digit IMEI for SinoTrack / 4G tracker
   simNumber?: string; // Phone number in collar for audio listen calls
   addedBy?: string; // Hunter / user name who added the dog
+  addedByUid?: string; // Firebase uid of the hunter who added the dog (soft ownership)
   lastUpdated?: number; // Timestamp of last received GPS telemetry
   distanceFromUser?: number; // meters
   bearingFromUser?: number; // degrees

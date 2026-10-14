@@ -61,6 +61,7 @@ import {
   saveSessionTeamPositions,
   saveSessionRadio,
   setActiveHuntKey,
+  setActiveUid,
   setSessionAccessDeniedHandler,
 } from './services/userService';
 import { UserAuthModal } from './components/UserAuthModal';
@@ -216,6 +217,7 @@ export default function App() {
   // Arm the capability key of the active session before any effect or callback runs.
   // Without it the relay and Firestore refuse to serve the session.
   setActiveHuntKey(currentSession?.huntKey);
+  setActiveUid(currentUser?.uid);
 
   // A rejected relay write means the stored key is no longer valid (e.g. the hunt was
   // re-created). Tell the hunter instead of appearing to sync in silence.

@@ -13,7 +13,7 @@ import {
   clearPendingDeletedIds,
 } from '../utils/geoUtils';
 import { playBarkSpikeAlert } from '../utils/audioAlerts';
-import { saveSessionDogs, saveSessionDogsTelemetry, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders } from '../services/userService';
+import { saveSessionDogs, saveSessionDogsTelemetry, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders, getActiveUid } from '../services/userService';
 import { fetchDevicePosition, fetchDeviceHistory, extractTractiveToken } from '../services/collarService';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -474,6 +474,7 @@ export function useDogTracker({
     const dogToAdd: Dog = {
       ...newDog,
       addedBy: newDog.addedBy || userNickname || currentUser?.displayName || 'Minä',
+      addedByUid: newDog.addedByUid || currentUser?.uid,
     };
     const updatedList = [...dogsRef.current.filter((d) => d.id !== newDog.id), dogToAdd];
     dogsRef.current = updatedList;
@@ -508,6 +509,13 @@ export function useDogTracker({
   const handleDeleteDog = (dogId: string, options: { keepSaved?: boolean } = {}) => {
     const dogToDelete =
       dogsRef.current.find((d) => d.id === dogId) || dogs.find((d) => d.id === dogId);
+
+    // Phase 2 (H3): a collar added by another hunter cannot be removed by this one. The server
+    // enforces this too (soft boundary); this check keeps the honest case consistent locally.
+    if (dogToDelete?.addedByUid && dogToDelete.addedByUid !== getActiveUid()) {
+      window.alert('Vain koiran lisännyt voi poistaa sen.');
+      return;
+    }
 
     // 1. Mark all associated IDs (id, collarId, directGpsId, imei, tractive) as permanently deleted
     const idsToMark = [
@@ -594,11 +602,12 @@ export function useDogTracker({
       fetch(`/api/session/${codeToBroadcast}/dogs/delete`, {
         method: 'POST',
         headers: relayAuthHeaders(),
-        body: JSON.stringify({ dogId, deletedIds: idsToMark }),
+        body: JSON.stringify({ dogId, deletedIds: idsToMark, uid: getActiveUid() }),
       })
         .then((resp) => {
           // The server holds the deletion now, so stop retrying it on every later push.
-          if (resp.ok) clearPendingDeletedIds(idsToMark);
+          // A 403 (not owned by caller) is terminal too - retrying cannot change it.
+          if (resp.ok || resp.status === 403) clearPendingDeletedIds(idsToMark);
         })
         .catch(() => {});
 

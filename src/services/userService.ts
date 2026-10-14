@@ -23,6 +23,8 @@ import {
   setActiveHuntKey as setSessionHuntKey,
   getActiveHuntKey,
   relayAuthHeaders,
+  setActiveUid,
+  getActiveUid,
 } from './sessionAuth';
 
 export interface UserProfile {
@@ -115,7 +117,7 @@ export const setActiveHuntKey = (huntKey: string | null | undefined): void => {
   setDeletedRegistrySecret(getActiveHuntKey());
 };
 
-export { getActiveHuntKey, relayAuthHeaders };
+export { getActiveHuntKey, relayAuthHeaders, setActiveUid, getActiveUid };
 
 /** The 'DEFAULT' code is a purely local bucket and never has a session on the server. */
 const isRemoteSession = (code: string): boolean => Boolean(code) && code !== 'DEFAULT';
@@ -192,10 +194,11 @@ async function flushPendingDeletions(code: string): Promise<void> {
     const resp = await fetch(`/api/session/${code.toUpperCase().trim()}/dogs/delete`, {
       method: 'POST',
       headers: relayAuthHeaders(),
-      body: JSON.stringify({ deletedIds: pending }),
+      body: JSON.stringify({ deletedIds: pending, uid: getActiveUid() }),
     });
-    // Only once the server holds them are they forgotten here.
-    if (resp.ok) clearPendingDeletedIds(pending);
+    // Only once the server holds them are they forgotten here. A 403 (not owned by caller) is
+    // terminal: retrying cannot change it, so drop it from the outbox too.
+    if (resp.ok || resp.status === 403) clearPendingDeletedIds(pending);
   } catch (e) {
     // Offline: the outbox keeps them for the next attempt.
   }

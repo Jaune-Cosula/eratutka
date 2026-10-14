@@ -13,6 +13,15 @@ export const setActiveHuntKey = (huntKey: string | null | undefined): void => {
 
 export const getActiveHuntKey = (): string | null => activeHuntKey;
 
+/** The signed-in user's uid, mirrored here so the delete path can carry it without prop drilling. */
+let activeUid: string | null = null;
+
+export const setActiveUid = (uid: string | null | undefined): void => {
+  activeUid = uid && String(uid).trim() ? String(uid).trim() : null;
+};
+
+export const getActiveUid = (): string | null => activeUid;
+
 /** Auth header for relay and device routes. Carries no key when no session is loaded yet. */
 export const relayAuthHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
