@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import crypto from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
+import { projectDogForViewer } from './src/shared/dogProjection';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -1555,9 +1556,12 @@ app.get('/api/gps/device/:id', async (req, res) => {
   const ageMs = now - record.timestamp;
   const isOnline = ageMs < 180000; // 3 min
 
+  // Phase 3A: this route is hunt-key gated but not owner-scoped, so drop the raw payload and the
+  // Tractive token/shareUrl that would otherwise leak to any participant. Diagnostics stay.
+  const { raw, rawPayload, tractiveInfo, ...viewerSafeRecord } = record;
   return res.json({
     success: true,
-    ...record,
+    ...viewerSafeRecord,
     ageSeconds: Math.round(ageMs / 1000),
     isOnline,
     status: record.barkRate && record.barkRate > 0 ? 'haukkuu' : (record.speed > 2 ? 'juoksee' : 'paikallaan'),
@@ -2673,7 +2677,11 @@ app.get('/api/session/:code/relay', (req, res) => {
       });
     }
 
-    const safeDogs = (data.dogs || []).filter((d: any) => !isDogDeletedOnServer(d, data.deletedDogIds));
+    // Phase 3A: project a copy for the wire; the store keeps the raw records for delete matching
+    // (isDogDeletedOnServer / findStoredDogForId) and the H3 ownership check.
+    const safeDogs = (data.dogs || [])
+      .filter((d: any) => !isDogDeletedOnServer(d, data.deletedDogIds))
+      .map((d: any) => projectDogForViewer(d));
 
     // Broadcast recently revived ids so participants drop them from their own registries,
     // which is what lets a re-added collar appear for the whole party again.
@@ -2718,7 +2726,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.17';
+const ERATUTKA_VERSION = '2.7.18';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {

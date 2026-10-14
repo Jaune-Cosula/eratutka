@@ -366,12 +366,15 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
                   onUpdateDogTelemetry={onUpdateDogTelemetry}
                 />
 
-                {/* Subcomponent 2: Collar Telemetry & Connection Diagnostics */}
-                <CollarDiagnosticsPanel
-                  dog={selectedDog}
-                  isSyncingGps={isSyncingGps}
-                  onManualSyncDog={syncNow}
-                />
+                {/* Subcomponent 2: Collar Telemetry & Connection Diagnostics. Owner-only: it
+                    reads identifiers/diagnostics that the viewer projection strips from others. */}
+                {canManageSelected && (
+                  <CollarDiagnosticsPanel
+                    dog={selectedDog}
+                    isSyncingGps={isSyncingGps}
+                    onManualSyncDog={syncNow}
+                  />
+                )}
 
                 {/* Subcomponent 3: Tracking Interval Presets & Remote Collar TCP Commands & SMS Fallback & Audio Alerts */}
                 {canManageSelected && (

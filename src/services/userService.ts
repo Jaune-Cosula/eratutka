@@ -26,6 +26,7 @@ import {
   setActiveUid,
   getActiveUid,
 } from './sessionAuth';
+import { projectDogForViewer } from '../shared/dogProjection';
 
 export interface UserProfile {
   uid: string;
@@ -742,7 +743,12 @@ export const saveSessionPartial = async (
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
   const key = getActiveHuntKey();
-  const safeDogs = partialData.dogs ? partialData.dogs.filter((d) => !isDogDeleted(d)) : undefined;
+  // Project to the viewer-safe field set before anything leaves this device: this list feeds
+  // BOTH the relay push and the sessions/{key} Firestore document. Local and account
+  // persistence (persistDogsLocally, saveDogToUserFirebase) keep the full record.
+  const safeDogs = partialData.dogs
+    ? partialData.dogs.filter((d) => !isDogDeleted(d)).map(projectDogForViewer)
+    : undefined;
   // The PIN gates code-based joining and is verified server-side; it must never travel
   // to the relay, to Firestore or into another hunter's client. The key is only added
   // when a session object was actually supplied: a bare `undefined` field is rejected

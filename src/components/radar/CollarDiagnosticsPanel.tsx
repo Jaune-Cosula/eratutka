@@ -30,6 +30,14 @@ export const CollarDiagnosticsPanel: React.FC<CollarDiagnosticsPanelProps> = ({
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [copiedRawPayload, setCopiedRawPayload] = useState<boolean>(false);
 
+  // Phase 3A: only a full (owner) dog has the identifiers and diagnostics this panel shows; a
+  // viewer-projected dog lacks them, so render nothing rather than a panel of placeholders.
+  const hasOwnerTelemetry = Boolean(
+    dog.directGpsId || dog.imei || dog.collarId || dog.gatewayServerUrl || dog.rawPayload ||
+    dog.satellites != null || dog.gsmSignalCsq != null || dog.protocolName || dog.voltage != null
+  );
+  if (!hasOwnerTelemetry) return null;
+
   const sats = dog.satellites ?? 12;
   const csq = dog.gsmSignalCsq ?? 24;
   const dbm = dog.gsmSignalDb ?? Math.round(-113 + (csq * 2));

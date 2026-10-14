@@ -178,7 +178,9 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
         </button>
       )}
 
-      <CollarDiagnosticsPanel dog={dog} isSyncingGps={isSyncingGps} onManualSyncDog={syncNow} />
+      {canManage && (
+        <CollarDiagnosticsPanel dog={dog} isSyncingGps={isSyncingGps} onManualSyncDog={syncNow} />
+      )}
       {canManage && (
         <CollarControlPanel dog={dog} onUpdateDogTelemetry={p.onUpdateDogTelemetry} onToggleDogAlert={p.onToggleDogAlert} onOpenIcarSync={() => onOpenSync(dog)} />
       )}

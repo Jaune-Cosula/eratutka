@@ -823,6 +823,27 @@ export function mergeDogLists(
       lastBarkTimestamp: primary.lastBarkTimestamp || secondary.lastBarkTimestamp,
       recentBarkRate: primary.recentBarkRate || secondary.recentBarkRate,
       trackHistory: combinedHistory.length > 0 ? combinedHistory : (primary.trackHistory || []),
+      // Phase 3A: owner-only fields are omitted from the wire projection, so a fresher projected
+      // incoming dog must not wipe them from the owner's in-memory copy. Prefer whichever side
+      // actually carries a value.
+      simNumber: primary.simNumber || secondary.simNumber,
+      tractiveShareUrl: primary.tractiveShareUrl || secondary.tractiveShareUrl,
+      tractiveTrackerId: primary.tractiveTrackerId || secondary.tractiveTrackerId,
+      tractivePetName: primary.tractivePetName || secondary.tractivePetName,
+      tractiveOwnerName: primary.tractiveOwnerName || secondary.tractiveOwnerName,
+      rawPayload: primary.rawPayload || secondary.rawPayload,
+      networkStatus: primary.networkStatus || secondary.networkStatus,
+      fixMode: primary.fixMode || secondary.fixMode,
+      protocolName: primary.protocolName || secondary.protocolName,
+      telematicsProvider: primary.telematicsProvider || secondary.telematicsProvider,
+      addedBy: primary.addedBy || secondary.addedBy,
+      addedByUid: primary.addedByUid || secondary.addedByUid,
+      satellites: primary.satellites ?? secondary.satellites,
+      gsmSignalCsq: primary.gsmSignalCsq ?? secondary.gsmSignalCsq,
+      gsmSignalDb: primary.gsmSignalDb ?? secondary.gsmSignalDb,
+      voltage: primary.voltage ?? secondary.voltage,
+      hdop: primary.hdop ?? secondary.hdop,
+      lastPacketLatencySec: primary.lastPacketLatencySec ?? secondary.lastPacketLatencySec,
     };
 
     mergedMap.set(existing.id, mergedDog);
