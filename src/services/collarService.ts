@@ -3,6 +3,7 @@
  * Unifies telematics fetching between useDogTracker and manual sync components.
  */
 import { Dog } from '../types';
+import { relayAuthHeaders } from './sessionAuth';
 
 export interface DevicePositionResult {
   success: boolean;
@@ -111,7 +112,7 @@ export async function fetchTractivePosition(tokenOrUrl: string): Promise<DeviceP
   try {
     const res = await fetch('/api/tractive/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: relayAuthHeaders(),
       body: JSON.stringify({ token, shareUrl: tokenOrUrl }),
     });
     if (res.ok) {
@@ -160,13 +161,8 @@ export async function fetchDevicePosition(
   try {
     const gwResp = await fetch('/api/gateway/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        gatewayUrl: gwUrl,
-        deviceId: trimmedId,
-        token: trimmedId,
-        shareUrl: gwUrl,
-      }),
+      headers: relayAuthHeaders(),
+      body: JSON.stringify({ deviceId: trimmedId }),
     });
     if (gwResp.ok) {
       const gwData = await gwResp.json();
@@ -182,7 +178,8 @@ export async function fetchDevicePosition(
   if (!data || !data.success || typeof data.lat !== 'number' || data.lat === 0) {
     try {
       const resp = await fetch(
-        `/api/gps/device/${encodeURIComponent(trimmedId)}?pull=true&gatewayUrl=${encodeURIComponent(gwUrl)}`
+        `/api/gps/device/${encodeURIComponent(trimmedId)}?pull=true`,
+        { headers: relayAuthHeaders() }
       );
       if (resp.ok) {
         const devData = await resp.json();
@@ -213,7 +210,7 @@ export async function fetchDeviceHistory(
   }
 
   const gwUrl = gatewayUrl || 'http://35.206.111.214:8080/api/positions';
-  let histUrl = `/api/gps/history/${encodeURIComponent(trimmedId)}?gatewayUrl=${encodeURIComponent(gwUrl)}`;
+  let histUrl = `/api/gps/history/${encodeURIComponent(trimmedId)}`;
   if (options.since !== undefined) {
     histUrl += `&since=${options.since}&limit=${options.limit || 500}`;
   } else {
@@ -221,7 +218,7 @@ export async function fetchDeviceHistory(
   }
 
   try {
-    const resp = await fetch(histUrl);
+    const resp = await fetch(histUrl, { headers: relayAuthHeaders() });
     if (resp.ok) {
       return await resp.json();
     }
@@ -261,7 +258,7 @@ export async function syncDogTelemetry(dogToSync: Dog): Promise<DogSyncResult> {
     extractTractiveToken(dogToSync.tractiveShareUrl) ||
     extractTractiveToken(dogToSync.directGpsId) ||
     extractTractiveToken(dogToSync.collarId) ||
-    (isTractive ? (dogToSync.tractiveTrackerId || '6f212df630') : null);
+    (isTractive ? (dogToSync.tractiveTrackerId ?? null) : null);
 
   const cleanId = String(
     (isTractive && tractiveToken) ||

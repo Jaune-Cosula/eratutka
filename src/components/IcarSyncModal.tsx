@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dog } from '../types';
 import { fetchDevicePosition, extractTractiveToken } from '../services/collarService';
+import { relayAuthHeaders } from '../services/userService';
 import { DOG_COLOR_PALETTE } from '../data/dogColors';
 import {
   X,
@@ -82,7 +83,7 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
       try {
         const clean = String(directId).replace(/^ID[:\s]*/i, '').trim();
         if (!clean) return;
-        const res = await fetch(`/api/gps/device/${encodeURIComponent(clean)}`);
+        const res = await fetch(`/api/gps/device/${encodeURIComponent(clean)}`, { headers: relayAuthHeaders() });
         if (res.ok) {
           const json = await res.json();
           setLiveDirectTelemetry(json);
@@ -120,7 +121,7 @@ export const CollarSyncModal: React.FC<CollarSyncModalProps> = ({
 
       const res = await fetch('/api/gps/simulate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: relayAuthHeaders(),
         body: JSON.stringify({
           id: cleanDirectId,
           lat: newLat,

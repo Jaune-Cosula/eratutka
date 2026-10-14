@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Dog } from '../../types';
+import { relayAuthHeaders } from '../../services/userService';
 import { playBarkSpikeAlert, playStandAlert } from '../../utils/audioAlerts';
 import {
   Timer,
@@ -51,12 +52,11 @@ export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
       // 2. Call backend proxy to Gateway
       const res = await fetch('/api/collar/command', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: relayAuthHeaders(),
         body: JSON.stringify({
           deviceId: cleanId,
           command: effectiveCmd,
           interval: targetInterval,
-          gatewayUrl: gwUrl,
         }),
       });
 

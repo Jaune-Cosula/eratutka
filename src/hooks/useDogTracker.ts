@@ -241,7 +241,7 @@ export function useDogTracker({
             extractTractiveToken(dog.tractiveShareUrl) ||
             extractTractiveToken(dog.directGpsId) ||
             extractTractiveToken(dog.collarId) ||
-            (isTractiveDog ? (dog.tractiveTrackerId || '6f212df630') : null);
+            (isTractiveDog ? (dog.tractiveTrackerId ?? null) : null);
 
           const directId = (isTractiveDog && tractiveToken) ? tractiveToken : (dog.directGpsId || dog.imei || dog.collarId);
           const cleanId = String(directId || '').replace(/^ID[:\s]*/i, '').trim();

@@ -9,7 +9,7 @@ import {
   SafetySector,
   UserLocation,
 } from '../types';
-import { calculateDistance, calculateBearing, formatDistance, wgs84ToEtrsTm35Fin, calculateDogTotalDistance, getCompassDirection, pruneExpiredTrackPoints, DOG_TRACK_MAX_AGE_MS, RING_RADII, RING_LIMIT_M } from '../utils/geoUtils';
+import { calculateDistance, calculateBearing, formatDistance, wgs84ToEtrsTm35Fin, calculateDogTotalDistance, getCompassDirection, pruneExpiredTrackPoints, DOG_TRACK_MAX_AGE_MS, RING_RADII, RING_LIMIT_M, escapeHtml, safeCssColor } from '../utils/geoUtils';
 import { Compass, Crosshair, MapPin, Eye, EyeOff, Layers, ChevronDown, Play, Pause } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useSyncedSetting } from '../hooks/useSyncedSetting';
@@ -647,8 +647,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               : `${(ageMinutes / 60).toFixed(1)} h sitten`;
 
           const tooltipHtml = chunk.isBarking
-            ? `🐕 <strong>${dog.name}</strong>: <strong>Haukku</strong> (${ageText})`
-            : `🐕 <strong>${dog.name}</strong>: Jälki (${ageText})`;
+            ? `🐕 <strong>${escapeHtml(dog.name)}</strong>: <strong>Haukku</strong> (${ageText})`
+            : `🐕 <strong>${escapeHtml(dog.name)}</strong>: Jälki (${ageText})`;
 
           polyline.bindTooltip(tooltipHtml, {
             sticky: true,
@@ -690,11 +690,11 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           <div class="flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-stone-900/95 text-white text-[11px] font-bold border ${
             isSelected ? 'border-amber-400 ring-2 ring-amber-400' : 'border-stone-700'
           } shadow-lg whitespace-nowrap">
-            <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${dog.color}"></span>
-            <span class="font-extrabold">${dog.name}</span>
+            <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${safeCssColor(dog.color)}"></span>
+            <span class="font-extrabold">${escapeHtml(dog.name)}</span>
             ${statusBadge}
           </div>
-          <div class="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-xl mt-0.5 border-2 border-white text-base" style="background-color: ${dog.color}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-xl mt-0.5 border-2 border-white text-base" style="background-color: ${safeCssColor(dog.color)}">
             ${petEmoji}
           </div>
         </div>
@@ -721,12 +721,12 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const totalDistMeters = calculateDogTotalDistance(dog);
       const totalDistText = `<div style="font-size:11px; font-weight:700; color:#0284c7; margin-top:2px;">📏 Kulkema matka: ${formatDistance(totalDistMeters)}</div>`;
 
-      const addedByText = dog.addedBy ? `<div style="font-size:11px; color:#444; margin-top:2px;">👤 Lisännyt: <b style="color:#d97706;">${dog.addedBy}</b></div>` : '';
+      const addedByText = dog.addedBy ? `<div style="font-size:11px; color:#444; margin-top:2px;">👤 Lisännyt: <b style="color:#d97706;">${escapeHtml(dog.addedBy)}</b></div>` : '';
 
       const popupHtml = `
         <div style="min-width: 180px;" class="p-1 font-sans text-stone-900">
-          <div style="color:${dog.color}; font-weight:800; font-size:14px;">${petEmoji} ${dog.name}</div>
-          <div style="font-size:11px; color:#555;">${dog.breed} • ${dog.trackerModel || dog.collarId}</div>
+          <div style="color:${safeCssColor(dog.color)}; font-weight:800; font-size:14px;">${petEmoji} ${escapeHtml(dog.name)}</div>
+          <div style="font-size:11px; color:#555;">${escapeHtml(dog.breed)} • ${escapeHtml(dog.trackerModel || dog.collarId)}</div>
           ${addedByText}
           ${distToUserText}
           ${totalDistText}
@@ -810,7 +810,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           ${
             showHunterNames
               ? `<div class="bg-amber-950/90 text-amber-200 border border-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md mb-0.5 whitespace-nowrap">
-                  ${member.name} ${isTrackedHunter ? '🎯 (SEURANNASSA)' : ''}
+                  ${escapeHtml(member.name)} ${isTrackedHunter ? '🎯 (SEURANNASSA)' : ''}
                 </div>`
               : ''
           }
@@ -855,10 +855,10 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const hunterPopupHtml = `
         <div style="min-width: 185px;" class="p-1 font-sans text-stone-900">
           <div style="font-weight:800; font-size:14px; color:#0284c7;" class="flex items-center space-x-1">
-            🎯 <b>${member.name}</b>
+            🎯 <b>${escapeHtml(member.name)}</b>
           </div>
           <div style="font-size:11px; color:#555; margin-top:2px;">
-            ${hunterRoleTitle} ${member.standName ? `• ${member.standName}` : ''}
+            ${hunterRoleTitle} ${member.standName ? `• ${escapeHtml(member.standName)}` : ''}
           </div>
           <div style="font-size:12px; margin-top:4px;">Tila: <b>${hunterStatusTitle}</b></div>
           <div style="font-size:11px; color:#059669; font-weight:700; margin-top:4px; background-color:#ecfdf5; padding:3px 6px; border-radius:6px; border:1px solid #a7f3d0; display:inline-block;">
@@ -931,7 +931,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const bearing = calculateBearing(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
       const distToDog = calculateDistance(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
       const distFormatted = formatDistance(distToDog);
-      const arrowColor = trackedDog.color || '#f59e0b';
+      const arrowColor = safeCssColor(trackedDog.color || '#f59e0b');
       const isBarking = trackedDog.status === 'haukkuu' || (trackedDog.barkRate && trackedDog.barkRate > 0);
 
       // Icon size [110, 110], anchor at center [55, 55].
@@ -1014,7 +1014,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                 dashArray: '5, 5',
               })
                 .bindTooltip(
-                  `<b>🌲 ${anno.title}</b>${areaText ? ` (${areaText})` : ''}`,
+                  `<b>🌲 ${escapeHtml(anno.title)}</b>${areaText ? ` (${areaText})` : ''}`,
                   { permanent: false, direction: 'top', className: 'font-sans text-xs font-bold' }
                 )
                 .bindPopup(
@@ -1023,9 +1023,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                       <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">🌲 METSÄSTYSALUE</span>
                       ${areaText ? `<span class="text-xs font-mono font-bold text-stone-700">${areaText}</span>` : ''}
                     </div>
-                    <h4 class="font-extrabold text-stone-900 text-sm leading-tight">${anno.title}</h4>
-                    <p class="text-xs text-stone-600 mt-1">${anno.description || ''}</p>
-                    <div class="mt-2 pt-1 border-t border-stone-200 text-[10px] text-stone-400">Lähde: ${anno.createdBy}</div>
+                    <h4 class="font-extrabold text-stone-900 text-sm leading-tight">${escapeHtml(anno.title)}</h4>
+                    <p class="text-xs text-stone-600 mt-1">${escapeHtml(anno.description || '')}</p>
+                    <div class="mt-2 pt-1 border-t border-stone-200 text-[10px] text-stone-400">Lähde: ${escapeHtml(anno.createdBy)}</div>
                   </div>`
                 )
                 .addTo(layerGroup);
@@ -1049,9 +1049,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               })
                 .bindPopup(
                   `<div class="p-1 font-sans">
-                    <h4 class="font-black text-amber-600 text-sm">🛡️ ${anno.title} (Geofence)</h4>
+                    <h4 class="font-black text-amber-600 text-sm">🛡️ ${escapeHtml(anno.title)} (Geofence)</h4>
                     <p class="text-xs text-stone-700 font-bold mt-1">Säde: ${radius} metriä</p>
-                    <p class="text-[11px] text-stone-500 mt-0.5">${anno.description || ''}</p>
+                    <p class="text-[11px] text-stone-500 mt-0.5">${escapeHtml(anno.description || '')}</p>
                   </div>`
                 )
                 .addTo(layerGroup);
@@ -1075,7 +1075,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         const annoIconHtml = `
           <div class="flex flex-col items-center cursor-pointer group">
             <div class="hidden group-hover:block bg-stone-900/95 text-stone-100 text-[10px] font-semibold px-2 py-0.5 rounded shadow-lg border border-stone-700 whitespace-nowrap mb-0.5">
-              ${anno.title}
+              ${escapeHtml(anno.title)}
             </div>
             <div class="w-6 h-6 rounded-lg ${bgColor} text-white border border-white flex items-center justify-center shadow-md text-xs font-bold">
               ${iconSymbol}
@@ -1098,9 +1098,9 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           const marker = L.marker([anno.lat, anno.lng], { icon: annoMarkerIcon })
             .bindPopup(
               `<div class="p-1">
-                <h4 class="font-bold text-sm text-stone-900">${anno.title}</h4>
-                <p class="text-xs text-stone-600 mt-0.5">${anno.description || ''}</p>
-                <div class="mt-1 text-[10px] text-stone-500">Lisännyt: ${anno.createdBy}</div>
+                <h4 class="font-bold text-sm text-stone-900">${escapeHtml(anno.title)}</h4>
+                <p class="text-xs text-stone-600 mt-0.5">${escapeHtml(anno.description || '')}</p>
+                <div class="mt-1 text-[10px] text-stone-500">Lisännyt: ${escapeHtml(anno.createdBy)}</div>
               </div>`
             )
             .addTo(layerGroup);

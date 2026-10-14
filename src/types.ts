@@ -42,7 +42,7 @@ export interface Dog {
   telematicsProvider?: 'eratutka_direct' | 'microgateway' | 'manual' | 'tractive';
   gatewayServerUrl?: string; // e.g. http://35.206.111.214:8080/api/positions
   directGpsId?: string; // Direct device ID for Erätutka server (e.g. 7026216737)
-  tractiveShareUrl?: string; // Tractive public share link or token (e.g. https://my.tractive.com/p/6f212df630)
+  tractiveShareUrl?: string; // Tractive public share link or token (e.g. https://my.tractive.com/p/ABC123)
   tractivePetName?: string; // Tractive pet name (e.g. Nirppu)
   tractiveTrackerId?: string; // Tractive collar ID (e.g. EUUGEDYM)
   tractiveOwnerName?: string; // Tractive pet owner name

@@ -17,7 +17,13 @@ import {
   isDogDeleted,
   getPendingDeletedIds,
   clearPendingDeletedIds,
+  setDeletedRegistrySecret,
 } from '../utils/geoUtils';
+import {
+  setActiveHuntKey as setSessionHuntKey,
+  getActiveHuntKey,
+  relayAuthHeaders,
+} from './sessionAuth';
 
 export interface UserProfile {
   uid: string;
@@ -99,23 +105,20 @@ const localClientId = 'client_' + Math.random().toString(36).substring(2, 10) + 
  * (which is persisted to localStorage), and is mirrored here so the low-level helpers
  * can reach it without threading the session object through every call.
  */
-let activeHuntKey: string | null = null;
-
+/**
+ * Sets the active session key. Besides the auth-header state (sessionAuth), it mirrors the key
+ * into the delete-registry secret so relay delete/revive signals - which now arrive as
+ * per-session pseudonyms instead of raw identifiers - can be matched back to a collar.
+ */
 export const setActiveHuntKey = (huntKey: string | null | undefined): void => {
-  activeHuntKey = huntKey && String(huntKey).trim() ? String(huntKey).trim() : null;
+  setSessionHuntKey(huntKey);
+  setDeletedRegistrySecret(getActiveHuntKey());
 };
 
-export const getActiveHuntKey = (): string | null => activeHuntKey;
+export { getActiveHuntKey, relayAuthHeaders };
 
 /** The 'DEFAULT' code is a purely local bucket and never has a session on the server. */
 const isRemoteSession = (code: string): boolean => Boolean(code) && code !== 'DEFAULT';
-
-/** Auth header for relay calls. Carries no key when no session is loaded yet. */
-export const relayAuthHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (activeHuntKey) headers['X-Hunt-Key'] = activeHuntKey;
-  return headers;
-};
 
 /** The PIN is a group secret that gates code-based joining; it must never be transmitted. */
 const stripSessionSecrets = (info: unknown): unknown => {
@@ -157,7 +160,7 @@ async function pushToLiveRelay(
 ): Promise<void> {
   try {
     const code = sessionCode.toUpperCase().trim();
-    if (!isRemoteSession(code) || !activeHuntKey) return;
+    if (!isRemoteSession(code) || !getActiveHuntKey()) return;
     const resp = await fetch(`/api/session/${code}/relay`, {
       method: 'POST',
       headers: relayAuthHeaders(),
@@ -448,7 +451,7 @@ export const subscribeToSessionFirebase = (
   // 1. High-speed In-Memory Relay Poller (2-3s interval, consumes 0 Firebase writes/reads)
   const pollRelay = async () => {
     if (isUnmounted) return;
-    const key = activeHuntKey;
+    const key = getActiveHuntKey();
     if (!key || !isRemoteSession(code)) return;
     try {
       const resp = await fetch(
@@ -481,9 +484,10 @@ export const subscribeToSessionFirebase = (
   // 2. Firestore Document listener (when quota is active). The document ID is the
   //    capability key, so without a key there is nothing to listen to.
   let unsubscribeFirestore = () => {};
-  if (activeHuntKey && isRemoteSession(code) && !getIsFirestoreQuotaExceeded()) {
+  const firestoreKey = getActiveHuntKey();
+  if (firestoreKey && isRemoteSession(code) && !getIsFirestoreQuotaExceeded()) {
     try {
-      const sessionRef = doc(db, 'sessions', activeHuntKey);
+      const sessionRef = doc(db, 'sessions', firestoreKey);
       unsubscribeFirestore = onSnapshot(
         sessionRef,
         (snap) => {
@@ -601,7 +605,7 @@ export const fetchSessionFromFirebase = async (
   radioMessages?: RadioMessage[];
 } | null> => {
   const code = sessionCode.toUpperCase().trim();
-  const key = String(huntKey || activeHuntKey || '').trim();
+  const key = String(huntKey || getActiveHuntKey() || '').trim();
 
   // Without the capability key the server and Firestore both refuse to hand out the
   // session, so the locally cached copy is the only thing left to read.
@@ -734,7 +738,7 @@ export const saveSessionPartial = async (
   durable = true
 ): Promise<void> => {
   const code = sessionCode.toUpperCase().trim();
-  const key = activeHuntKey;
+  const key = getActiveHuntKey();
   const safeDogs = partialData.dogs ? partialData.dogs.filter((d) => !isDogDeleted(d)) : undefined;
   // The PIN gates code-based joining and is verified server-side; it must never travel
   // to the relay, to Firestore or into another hunter's client. The key is only added
@@ -831,7 +835,7 @@ export const saveSessionPartial = async (
 
     try {
       // Re-read the key here: this may run from a timer, after the session changed.
-      const writeKey = activeHuntKey;
+      const writeKey = getActiveHuntKey();
       if (!writeKey || !isRemoteSession(code)) return;
       const sessionRef = doc(db, 'sessions', writeKey);
       await setDoc(

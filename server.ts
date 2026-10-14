@@ -4,10 +4,59 @@ import crypto from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Phase 1 security: browser-originated device/gateway/command routes require the session hunt
+// key (X-Hunt-Key), matching how the session relay already authorizes. Functions below are
+// hoisted, so this registration can precede their definitions. The relay/delete and bootstrap
+// routes keep their own checks and are intentionally not listed here.
+app.use(
+  [
+    '/api/gps/history',
+    '/api/gps/device',
+    '/api/gps/devices',
+    '/api/gps/simulate',
+    '/api/gateway/sync',
+    '/api/tractive/sync',
+    '/api/tractive/share',
+    '/api/collar/command',
+    '/api/devices',
+  ],
+  requireHuntKey
+);
+
+// Gateway URL pinning: caller-supplied gateway URLs are ignored unless allowlisted, so a
+// browser cannot make the server fetch an arbitrary host (SSRF root cause). The canonical
+// default is always allowed (AGENTS.md rule 1). Tractive share links resolve to a fixed host
+// and pass through unchanged.
+const GATEWAY_URL_DEFAULT =
+  process.env.ERATUTKA_GATEWAY_URL || 'http://35.206.111.214:8080/api/positions';
+const GATEWAY_URL_ALLOWLIST = [
+  GATEWAY_URL_DEFAULT,
+  ...String(process.env.ERATUTKA_GATEWAY_ALLOWLIST || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
+function isTractiveTarget(s: string): boolean {
+  return s.toLowerCase().includes('tractive') || extractTractiveToken(s) !== null;
+}
+function resolveGatewayUrl(raw: unknown): string {
+  const candidate = typeof raw === 'string' ? raw.trim() : '';
+  if (!candidate) return GATEWAY_URL_DEFAULT;
+  if (isTractiveTarget(candidate)) return candidate;
+  return GATEWAY_URL_ALLOWLIST.includes(candidate) ? candidate : GATEWAY_URL_DEFAULT;
+}
+
+// Shared secret sent to the self-hosted gateway on server-to-server calls. Empty => not sent
+// (transition phase; the gateway gate is off until its GATEWAY_SECRET is set).
+const GATEWAY_SECRET = process.env.GATEWAY_SECRET || '';
+function gatewayAuthHeader(): Record<string, string> {
+  return GATEWAY_SECRET ? { 'X-Gateway-Secret': GATEWAY_SECRET } : {};
+}
 
 // In-memory live store for direct GPS devices reporting to Erätutka
 interface DirectGpsRecord {
@@ -389,10 +438,8 @@ export function extractTractiveToken(input: string | undefined | null): string |
   return null;
 }
 
+// Populated at runtime from fetched Tractive share responses; no hardcoded tokens.
 const tractiveTokenMap = new Map<string, string>();
-tractiveTokenMap.set('6F212DF630', '6f212df630');
-tractiveTokenMap.set('EUUGEDYM', '6f212df630');
-tractiveTokenMap.set('NIRPPU', '6f212df630');
 
 async function pullFromTractiveShare(
   tokenOrUrl: string,
@@ -689,7 +736,7 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
       try {
         const resp = await fetch(ep, {
           signal: controller.signal,
-          headers: { Accept: 'application/json,text/html,*/*', 'User-Agent': 'Eratutka/2.0' },
+          headers: { Accept: 'application/json,text/html,*/*', 'User-Agent': 'Eratutka/2.0', ...gatewayAuthHeader() },
         });
 
         if (!resp.ok) continue;
@@ -1082,10 +1129,12 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
         extractTractiveToken(cleanId) ||
         extractTractiveToken(gatewayUrl) ||
         tractiveTokenMap.get(cleanId.toUpperCase()) ||
-        '6f212df630';
-      const tractiveHistory = await pullHistoryFromTractive(token);
-      if (tractiveHistory && tractiveHistory.length > 0) {
-        return tractiveHistory;
+        '';
+      if (token) {
+        const tractiveHistory = await pullHistoryFromTractive(token);
+        if (tractiveHistory && tractiveHistory.length > 0) {
+          return tractiveHistory;
+        }
       }
     }
 
@@ -1118,7 +1167,7 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
         try {
           const resp = await fetch(ep, {
             signal: controller.signal,
-            headers: { 'Accept': 'application/json', 'User-Agent': 'Eratutka/2.0' },
+            headers: { 'Accept': 'application/json', 'User-Agent': 'Eratutka/2.0', ...gatewayAuthHeader() },
           });
 
           if (resp.ok) {
@@ -1395,7 +1444,8 @@ app.get('/api/gps/history/:id', async (req, res) => {
     const since = parseBoundedInt(req.query.since, 0, 0, Number.MAX_SAFE_INTEGER);
     const hours = parseBoundedInt(req.query.hours, 12, 1, 24);
     const limit = parseBoundedInt(req.query.limit, 5000, 1, 10000);
-    const gatewayUrl = req.query.gatewayUrl ? String(req.query.gatewayUrl) : undefined;
+    const rawGatewayUrl = req.query.gatewayUrl ? String(req.query.gatewayUrl) : undefined;
+    const gatewayUrl = rawGatewayUrl ? resolveGatewayUrl(rawGatewayUrl) : undefined;
     const cutoffTime = Math.max(since, Date.now() - hours * 60 * 60 * 1000);
 
     // 1. Try pulling fresh history from gateway if url is supplied, default gateway, or Tractive
@@ -1450,7 +1500,7 @@ app.all('/api/gps/wake', (req, res) => {
 app.get('/api/gps/device/:id', async (req, res) => {
   const cleanId = String(req.params.id).replace(/^ID[:\s]*/i, '').trim();
   const shouldPull = req.query.pull !== 'false';
-  const gatewayUrl = String(req.query.gatewayUrl || 'http://35.206.111.214:8080/api/positions');
+  const gatewayUrl = resolveGatewayUrl(req.query.gatewayUrl);
 
   let record = findMatchingGpsRecord(cleanId);
   const now = Date.now();
@@ -1555,7 +1605,7 @@ app.post('/api/gps/simulate', (req, res) => {
 app.post('/api/gateway/sync', async (req, res) => {
   try {
     const { gatewayUrl, serverUrl, deviceId, imei, id, token, shareUrl, tractiveShareUrl } = req.body;
-    const url = String(gatewayUrl || serverUrl || shareUrl || tractiveShareUrl || 'http://35.206.111.214:8080/api/positions');
+    const url = resolveGatewayUrl(gatewayUrl || serverUrl || shareUrl || tractiveShareUrl);
     const cleanId = String(deviceId || imei || id || token || '').replace(/^ID[:\s]*/i, '').trim();
 
     const record = await pullFromMicroGateway(url, cleanId || url);
@@ -1641,13 +1691,21 @@ app.all('/api/tractive/sync', async (req, res) => {
   try {
     const raw = req.method === 'GET' ? req.query : req.body;
     const { token, shareUrl, deviceId, url } = raw || {};
-    const identifier = String(token || shareUrl || url || deviceId || '6f212df630').trim();
+    const identifier = String(token || shareUrl || url || deviceId || '').trim();
     const cleanToken =
       extractTractiveToken(shareUrl) ||
       extractTractiveToken(token) ||
       extractTractiveToken(identifier) ||
       tractiveTokenMap.get(identifier.toUpperCase()) ||
-      '6f212df630';
+      '';
+
+    if (!identifier || !cleanToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'TRACTIVE_TOKEN_REQUIRED',
+        message: 'Tractive-jakolinkki tai -token puuttuu.',
+      });
+    }
 
     const record = await pullFromTractiveShare(cleanToken, identifier);
     if (!record) {
@@ -1803,6 +1861,7 @@ async function forwardCommandToGateway(gwUrl: string, deviceId: string, command?
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          ...gatewayAuthHeader(),
         },
         body: JSON.stringify(payload),
         signal: ctrl.signal,
@@ -1855,7 +1914,7 @@ app.post(['/api/collar/command', '/api/devices/:id/command'], async (req, res) =
       });
     }
 
-    const effectiveGwUrl = gatewayUrl || 'http://35.206.111.214:8080/api/positions';
+    const effectiveGwUrl = resolveGatewayUrl(gatewayUrl);
     const result = await forwardCommandToGateway(effectiveGwUrl, cleanId, command, typeof interval === 'number' ? interval : undefined);
 
     if (result.success) {
@@ -2031,6 +2090,32 @@ function denySessionAccess(res: express.Response, message: string) {
 }
 
 /**
+ * A bare hunt key authorizes the keyless device/gateway/command routes iff it matches a live
+ * session. The session count is capped (MAX_LIVE_SESSIONS), so an O(n) scan is fine and avoids
+ * an index that could drift out of sync with the store. Header-only, never the query string,
+ * so the key cannot leak through logs or referrers.
+ */
+function huntKeyAuthorized(req: express.Request): boolean {
+  const key = req.get('x-hunt-key');
+  if (!key) return false;
+  const trimmed = String(key).trim();
+  if (!HUNT_KEY_PATTERN.test(trimmed)) return false;
+  for (const data of sessionLiveStore.values()) {
+    if (data.huntKey && safeEqualString(trimmed, data.huntKey)) return true;
+  }
+  return false;
+}
+
+function requireHuntKey(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (huntKeyAuthorized(req)) return next();
+  return res.status(403).json({
+    success: false,
+    error: 'HUNT_KEY_REQUIRED',
+    message: 'Jahtiavain (X-Hunt-Key) puuttuu tai ei vastaa aktiivista jahtia.',
+  });
+}
+
+/**
  * Rate limiter for the PIN oracle. Keyed by session code (not by IP) because the app
  * runs behind a proxy where every client shares one socket address, which would make
  * a per-IP bucket lock out legitimate hunters.
@@ -2119,6 +2204,19 @@ function deletedIdVariants(rawId: string): string[] {
   }
 
   return Array.from(out);
+}
+
+/**
+ * Wire pseudonym for a delete/revive registry entry: a per-session keyed HMAC so the relay can
+ * tell clients which collar changed without ever exposing the raw IMEI / Tractive token. The
+ * server keeps the raw registry (filtering needs it); only the broadcast values are pseudonymised.
+ */
+function dogPseudonym(secret: string, value: string): string {
+  return crypto
+    .createHmac('sha256', secret || 'eratutka')
+    .update('eratutka:dog:' + value)
+    .digest('hex')
+    .slice(0, 24);
 }
 
 /** Marks one identifier as deleted, in every spelling. */
@@ -2322,7 +2420,9 @@ app.post('/api/session/:code/dogs/delete', (req, res) => {
       success: true,
       deletedCount: idsToPurge.length,
       remainingDogs: existing.dogs.length,
-      deletedDogIds: Array.from(existing.deletedDogIds),
+      deletedDogIds: Array.from(existing.deletedDogIds).map((v) =>
+        dogPseudonym(existing.huntKey || '', v)
+      ),
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -2497,6 +2597,12 @@ app.get('/api/session/:code/relay', (req, res) => {
       .filter(([, at]) => Date.now() - at <= REVIVED_ID_BROADCAST_MS)
       .map(([id]) => id);
 
+    // Pseudonymise the registry on the wire so participants learn which collar changed without
+    // ever receiving the raw IMEI / Tractive token. The server keeps the raw registry for filtering.
+    const pseudoSecret = data.huntKey || '';
+    const deletedWire = Array.from(data.deletedDogIds || []).map((v) => dogPseudonym(pseudoSecret, v));
+    const revivedWire = revivedIds.map((v) => dogPseudonym(pseudoSecret, v));
+
     return res.json({
       success: true,
       exists: true,
@@ -2504,16 +2610,16 @@ app.get('/api/session/:code/relay', (req, res) => {
       timestamp: data.updatedAt,
       isIdleStandby: data.isIdleStandby,
       activeClientsCount: data.activeClients.size,
-      deletedDogIds: Array.from(data.deletedDogIds || []),
-      revivedDogIds: revivedIds,
+      deletedDogIds: deletedWire,
+      revivedDogIds: revivedWire,
       data: {
         sessionInfo: data.sessionInfo,
         dogs: safeDogs,
         annotations: data.annotations,
         members: data.members,
         radioMessages: data.radioMessages,
-        deletedDogIds: Array.from(data.deletedDogIds || []),
-        revivedDogIds: revivedIds,
+        deletedDogIds: deletedWire,
+        revivedDogIds: revivedWire,
       },
     });
   } catch (error: any) {
@@ -2528,7 +2634,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.15';
+const ERATUTKA_VERSION = '2.7.16';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {
@@ -2545,6 +2651,31 @@ app.get('/api/app-version', (req, res) => {
 
 // Vite Middleware for frontend
 async function startServer() {
+  // Content Security Policy (defence-in-depth; the primary XSS fix is escaping at the render).
+  // Report-Only by default so a missing host cannot silently break login/sync; set
+  // CSP_ENFORCE=true to switch it to an enforcing policy once the console is clean.
+  const isDev = process.env.NODE_ENV !== 'production';
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: blob: https://avoin-karttakuva.maanmittauslaitos.fi https://server.arcgisonline.com https://*.tile.opentopomap.org https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.googleusercontent.com",
+    "style-src 'self' 'unsafe-inline' https://unpkg.com",
+    "font-src 'self' data:",
+    "script-src 'self' https://apis.google.com" + (isDev ? " 'unsafe-inline'" : ""),
+    "connect-src 'self' https://*.googleapis.com wss://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com" + (isDev ? " ws: wss:" : ""),
+    "frame-src https://calcium-form-07c1c.firebaseapp.com https://accounts.google.com",
+    "worker-src 'self' blob:",
+  ].join('; ');
+  const cspHeader =
+    process.env.CSP_ENFORCE === 'true' ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only';
+  app.use((req, res, next) => {
+    res.setHeader(cspHeader, csp);
+    next();
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

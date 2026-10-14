@@ -99,7 +99,7 @@ export const AddDogModal: React.FC<AddDogModalProps> = ({
     const tractiveToken =
       extractTractiveToken(tractiveShareUrl) ||
       extractTractiveToken(imei) ||
-      (isTractive && tractiveShareUrl ? tractiveShareUrl.trim() : (isTractive ? '6f212df630' : undefined));
+      (isTractive && tractiveShareUrl ? tractiveShareUrl.trim() : undefined);
 
     const defaultPrefix = isTractive ? 'TRAC-CAT' : trackerModel.includes('SinoTrack') ? 'ST904' : 'IK122';
     const generatedCollarId = (isTractive && tractiveToken)
@@ -131,9 +131,9 @@ export const AddDogModal: React.FC<AddDogModalProps> = ({
       telematicsProvider: isTractive ? 'tractive' : 'eratutka_direct',
       directGpsId: (isTractive && tractiveToken) ? tractiveToken : (imei.trim() || generatedCollarId),
       gatewayServerUrl: isTractive
-        ? (tractiveShareUrl.trim() || `https://my.tractive.com/p/${tractiveToken || '6f212df630'}`)
+        ? (tractiveShareUrl.trim() || `https://my.tractive.com/p/${tractiveToken || ''}`)
         : 'http://35.206.111.214:8080/api/positions',
-      tractiveShareUrl: isTractive ? (tractiveShareUrl.trim() || `https://my.tractive.com/p/${tractiveToken || '6f212df630'}`) : undefined,
+      tractiveShareUrl: isTractive ? (tractiveShareUrl.trim() || `https://my.tractive.com/p/${tractiveToken || ''}`) : undefined,
       tractiveTrackerId: isTractive && tractiveToken ? tractiveToken : undefined,
       autoSyncEnabled: true, // Continuous live sync active for all collars including Tractive
       trackingIntervalSec: 5,
@@ -271,10 +271,10 @@ export const AddDogModal: React.FC<AddDogModalProps> = ({
               type="button"
               onClick={() => {
                 setTrackerModel('Tractive GPS (Kissa / Koira)');
-                setName('Nirppu (Tractive Kissa)');
+                setName('Kissa (Tractive)');
                 setBreed('Kotikissa');
-                setTractiveShareUrl('https://my.tractive.com/p/6f212df630');
-                setImei('6f212df630');
+                setTractiveShareUrl('');
+                setImei('');
                 setColor('#06b6d4');
               }}
               className={`p-3 rounded-2xl border text-left transition relative overflow-hidden flex flex-col justify-between ${
@@ -555,20 +555,20 @@ export const AddDogModal: React.FC<AddDogModalProps> = ({
                     setTractiveShareUrl(e.target.value);
                     setImei(e.target.value);
                   }}
-                  placeholder="esim. https://my.tractive.com/p/6f212df630 tai 6f212df630"
+                  placeholder="esim. https://my.tractive.com/p/ABC123 tai ABC123"
                   className="flex-1 px-3.5 py-2.5 rounded-xl bg-stone-950 border border-sky-500/50 focus:border-sky-400 text-sky-200 text-sm font-mono outline-none transition"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    setTractiveShareUrl('https://my.tractive.com/p/6f212df630');
-                    setImei('6f212df630');
-                    setName('Nirppu (Tractive Kissa)');
+                    setTractiveShareUrl('');
+                    setImei('');
+                    setName('Kissa (Tractive)');
                     setBreed('Kotikissa');
                   }}
                   className="px-3 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold shrink-0 transition cursor-pointer"
                 >
-                  Kokeile linkkiä (Nirppu)
+                  Kokeile linkkiä
                 </button>
               </div>
               <p className="text-[11px] text-stone-300">

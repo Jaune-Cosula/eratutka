@@ -1,5 +1,6 @@
 import { MapAnnotation, Dog, DogTrackPoint } from '../types';
 import { extractTractiveToken } from '../services/collarService';
+import { hmacSha256Hex } from './hmac';
 
 /**
  * Calculates distance between two WGS84 coordinates in meters (Haversine formula).
@@ -400,6 +401,22 @@ const DELETED_DOGS_STORAGE_KEY = 'eratutka_deleted_dogs_registry';
 // Fast in-memory cache of deleted identifiers to prevent async storage race conditions
 let cachedDeletedDogIds: Set<string> | null = null;
 
+/**
+ * Per-session key for pseudonymising delete/revive registry entries, so the relay never carries
+ * raw collar identifiers. Set from the active hunt key (userService.setActiveHuntKey). When empty
+ * (no session on this device) matching falls back to raw identifiers only.
+ */
+let deletedRegistrySecret = '';
+
+export function setDeletedRegistrySecret(secret: string | null | undefined): void {
+  deletedRegistrySecret = secret ? String(secret) : '';
+}
+
+/** Wire pseudonym matching the server's `dogPseudonym`: HMAC-SHA256 keyed on the hunt key. */
+function dogPseudonym(value: string): string {
+  return hmacSha256Hex(deletedRegistrySecret, 'eratutka:dog:' + value).slice(0, 24);
+}
+
 // The registry is read once and cached for the life of the page, so anything that changes it
 // from outside this document - another tab, a cleanup typed into the console - has to drop the
 // cache. Without this the app keeps filtering with a list that no longer exists, and clearing
@@ -543,6 +560,15 @@ export function markDogAsDeleted(...items: (Dog | string | undefined | null)[]):
           current.add(id);
           changed = true;
         }
+        // Also store the wire pseudonym so a signal received from another client - which arrives
+        // as a pseudonym, never the raw identifier - matches through the same registry.
+        if (deletedRegistrySecret) {
+          const pseudo = dogPseudonym(id);
+          if (!current.has(pseudo)) {
+            current.add(pseudo);
+            changed = true;
+          }
+        }
       }
     }
 
@@ -575,6 +601,9 @@ export function clearDogFromDeleted(...items: (Dog | string | undefined | null)[
       const ids = extractAllDogIdentifiers(item);
       for (const id of ids) {
         if (current.delete(id)) {
+          changed = true;
+        }
+        if (deletedRegistrySecret && current.delete(dogPseudonym(id))) {
           changed = true;
         }
       }
@@ -674,6 +703,7 @@ export function isDogDeleted(dogOrId: Dog | string | undefined | null): boolean 
   const idsToCheck = extractAllDogIdentifiers(dogOrId);
   for (const id of idsToCheck) {
     if (deletedSet.has(id)) return true;
+    if (deletedRegistrySecret && deletedSet.has(dogPseudonym(id))) return true;
   }
   return false;
 }
@@ -699,6 +729,7 @@ export function mergeDogLists(
     const ids = extractAllDogIdentifiers(d);
     for (const id of ids) {
       if (deletedSet.has(id)) return true;
+      if (deletedRegistrySecret && deletedSet.has(dogPseudonym(id))) return true;
     }
     return false;
   };
@@ -1423,12 +1454,21 @@ function categorizeFeature(
   return { category: 'passipaikka', subType: 'passi', color: '#d97706' };
 }
 
-function escapeXml(unsafe: string): string {
-  return unsafe
+/** Escapes the five HTML-sensitive characters; safe for text nodes and quoted attributes. */
+export function escapeHtml(unsafe: string | undefined | null): string {
+  return String(unsafe ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+// GPX export uses the same escaping under its original name.
+const escapeXml = escapeHtml;
+
+/** Returns the value only if it is a plain CSS colour, otherwise a safe fallback (#000000). */
+export function safeCssColor(value: string | undefined | null): string {
+  const v = String(value ?? '').trim();
+  return /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,\s%]+\s*\))$/.test(v) ? v : '#000000';
 }
 
