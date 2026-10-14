@@ -765,6 +765,8 @@ async function pullFromMicroGateway(gatewayUrl: string, deviceId: string): Promi
       try {
         const resp = await fetch(ep, {
           signal: controller.signal,
+          // Phase 3C: never follow redirects - an allowlisted gateway could 302 to an internal host.
+          redirect: 'manual',
           headers: { Accept: 'application/json,text/html,*/*', 'User-Agent': 'Eratutka/2.0', ...gatewayAuthHeader() },
         });
 
@@ -1196,6 +1198,8 @@ async function pullHistoryFromMicroGateway(gatewayUrl: string, deviceId: string,
         try {
           const resp = await fetch(ep, {
             signal: controller.signal,
+            // Phase 3C: never follow redirects (SSRF depth).
+            redirect: 'manual',
             headers: { 'Accept': 'application/json', 'User-Agent': 'Eratutka/2.0', ...gatewayAuthHeader() },
           });
 
@@ -1920,6 +1924,8 @@ async function forwardCommandToGateway(gwUrl: string, deviceId: string, command?
     try {
       const resp = await fetch(endpoint, {
         method: 'POST',
+        // Phase 3C: never follow redirects (SSRF depth).
+        redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -2033,6 +2039,7 @@ interface LiveSessionData {
 
 /** Capability key format: 16 random bytes as lowercase hex. */
 const HUNT_KEY_PATTERN = /^[0-9a-f]{32}$/;
+const MIN_PIN_LENGTH = 4;
 /** Upper bound on live sessions, so an unauthenticated /create cannot exhaust memory. */
 const MAX_LIVE_SESSIONS = 500;
 
@@ -2363,6 +2370,16 @@ app.post('/api/session/create', (req, res) => {
         success: false,
         error: 'NAME_AND_PIN_REQUIRED',
         message: 'Jahtipäivän nimi ja PIN-koodi vaaditaan.',
+      });
+    }
+
+    // Phase 3C: a minimum length so a 1-2 digit PIN cannot be brute-forced. Only enforced on
+    // create (not on resolve) so hunts made before this change still join.
+    if (pin.length < MIN_PIN_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        error: 'PIN_TOO_SHORT',
+        message: `PIN-koodin on oltava vähintään ${MIN_PIN_LENGTH} merkkiä.`,
       });
     }
 
@@ -2726,7 +2743,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.18';
+const ERATUTKA_VERSION = '2.7.19';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {

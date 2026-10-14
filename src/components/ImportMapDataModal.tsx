@@ -55,6 +55,11 @@ export const ImportMapDataModal: React.FC<ImportMapDataModalProps> = ({
 
   const handleProcessFile = (file: File) => {
     setErrorMsg(null);
+    // Phase 3C: bound the import so a huge file cannot be read/parsed whole into memory.
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg('Tiedosto on liian suuri. Enintään 10 Mt.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {

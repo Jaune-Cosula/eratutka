@@ -175,8 +175,11 @@ export function useDogTracker({
     let ch: BroadcastChannel | null = null;
     try {
       ch = new BroadcastChannel(`eratutka_channel_${code}`);
+      // BroadcastChannel is same-origin by spec, so this only guards against malformed messages
+      // (there is no sender/origin authentication available on this API).
       ch.onmessage = (ev) => {
-        if (ev.data?.type === 'DELETE_DOG') {
+        const msg = ev?.data;
+        if (msg && typeof msg === 'object' && msg.type === 'DELETE_DOG') {
           handleDogDeletedEvent();
         }
       };

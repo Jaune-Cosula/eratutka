@@ -44,9 +44,9 @@ export const ShareSessionModal: React.FC<ShareSessionModalProps> = ({
   const readableKey = formatHuntKey(session.huntKey);
   const shareText = language === 'fi'
     ? `Tule mukaan Erätutka-koiramaastokartalle! Jahtipäivä: ${session.name}. Linkki (avautuu suoraan): ${inviteUrl}` +
-      (readableKey ? `\nTai koodilla: ${session.code}, PIN: ${session.password || '1234'}, jahtiavain: ${readableKey}` : '')
+      (readableKey ? `\nTai koodilla: ${session.code}, PIN: ${session.password || ''}, jahtiavain: ${readableKey}` : '')
     : `Join our Erätutka hunting map! Hunt session: ${session.name}. Link (opens directly): ${inviteUrl}` +
-      (readableKey ? `\nOr by code: ${session.code}, PIN: ${session.password || '1234'}, hunt key: ${readableKey}` : '');
+      (readableKey ? `\nOr by code: ${session.code}, PIN: ${session.password || ''}, hunt key: ${readableKey}` : '');
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(session.code);
@@ -139,7 +139,7 @@ export const ShareSessionModal: React.FC<ShareSessionModalProps> = ({
               <Key className="w-4 h-4 text-stone-400" />
               <span className="text-xs text-stone-300 font-semibold">{language === 'fi' ? 'Salasana:' : 'Password:'}</span>
               <span className="text-xs font-mono font-bold text-amber-300">
-                {showPassword ? (session.password || '1234') : '••••••••'}
+                {showPassword ? (session.password || '') : '••••••••'}
               </span>
             </div>
             <button

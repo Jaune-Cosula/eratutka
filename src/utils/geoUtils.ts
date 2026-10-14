@@ -716,6 +716,26 @@ export function isDogDeleted(dogOrId: Dog | string | undefined | null): boolean 
  * - Seamlessly unions trackHistory without duplicates.
  * - Preserves collar config and user customizations.
  */
+/**
+ * Rebuilds objects/arrays dropping own keys named `__proto__`, `constructor` or `prototype` at
+ * every level. Imported and relayed JSON is untrusted, and spreading it into app objects without
+ * this could carry prototype-polluting keys.
+ */
+export function stripDangerousKeys<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripDangerousKeys(v)) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      out[key] = stripDangerousKeys((value as Record<string, unknown>)[key]);
+    }
+    return out as unknown as T;
+  }
+  return value;
+}
+
 export function mergeDogLists(
   localDogs: Dog[],
   incomingDogs: Dog[],
@@ -734,13 +754,14 @@ export function mergeDogLists(
     return false;
   };
 
-  // Filter out any deleted dogs from both lists
-  const validLocal = (Array.isArray(localDogs) ? localDogs : []).filter(
-    (d) => !isItemDeleted(d)
-  );
-  const validIncoming = (Array.isArray(incomingDogs) ? incomingDogs : []).filter(
-    (d) => !isItemDeleted(d)
-  );
+  // Filter out any deleted dogs from both lists. Sanitize each entry: incoming lists come from
+  // the relay/Firestore/import and may carry prototype-polluting keys.
+  const validLocal = (Array.isArray(localDogs) ? localDogs : [])
+    .filter((d) => !isItemDeleted(d))
+    .map((d) => stripDangerousKeys(d));
+  const validIncoming = (Array.isArray(incomingDogs) ? incomingDogs : [])
+    .filter((d) => !isItemDeleted(d))
+    .map((d) => stripDangerousKeys(d));
 
   if (validIncoming.length === 0) {
     return validLocal.filter((d) => !isItemDeleted(d));
@@ -1176,7 +1197,7 @@ function parseJsonOrGeoJson(json: any, creatorTag: string, result: ParsedMapData
     json.annotations.forEach((anno: any, idx: number) => {
       if (anno.lat && anno.lng) {
         result.annotations.push({
-          ...anno,
+          ...stripDangerousKeys(anno),
           id: anno.id || `imported-json-${Date.now()}-${idx}`,
           createdBy: anno.createdBy || creatorTag,
         });
@@ -1195,7 +1216,7 @@ function parseJsonOrGeoJson(json: any, creatorTag: string, result: ParsedMapData
       const lng = typeof dog.lng === 'number' ? dog.lng : Number(dog.lng ?? dog.lon);
       if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) return;
       result.dogs.push({
-        ...dog,
+        ...stripDangerousKeys(dog),
         lat,
         lng,
         trackHistory: Array.isArray(dog.trackHistory) ? dog.trackHistory : [],

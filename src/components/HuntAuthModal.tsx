@@ -58,7 +58,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   // Create form state
   const [createSessionName, setCreateSessionName] = useState('Hirvijahti 2026');
   const [createNickname, setCreateNickname] = useState(language === 'fi' ? 'Jahtimestari' : 'Hunt Master');
-  const [createPassword, setCreatePassword] = useState('1234');
+  const [createPassword, setCreatePassword] = useState('');
 
   // Dog inclusion mode for new hunt creation: 'current' | 'empty'
   const [includeDogsMode, setIncludeDogsMode] = useState<'current' | 'empty'>(
@@ -137,6 +137,15 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
         language === 'fi'
           ? 'Täytä kaikki kentät: jahtipäivän nimi, nimimerkki ja PIN-koodi.'
           : 'Please fill in all fields: session name, nickname, and PIN.'
+      );
+      return;
+    }
+
+    if (createPassword.trim().length < 4) {
+      setErrorMessage(
+        language === 'fi'
+          ? 'PIN-koodin on oltava vähintään 4 merkkiä.'
+          : 'The PIN must be at least 4 characters.'
       );
       return;
     }

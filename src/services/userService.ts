@@ -716,6 +716,8 @@ const stripUndefinedDeep = <T,>(value: T): T => {
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const clean: Record<string, unknown> = {};
     for (const [field, fieldValue] of Object.entries(value)) {
+      // Phase 3C: never carry a prototype-polluting key into the rebuilt object.
+      if (field === '__proto__' || field === 'constructor' || field === 'prototype') continue;
       if (fieldValue !== undefined) clean[field] = stripUndefinedDeep(fieldValue);
     }
     return clean as T;
