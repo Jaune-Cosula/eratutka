@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Dog } from '../../types';
 import { relayAuthHeaders } from '../../services/userService';
-import { playBarkSpikeAlert, playStandAlert } from '../../utils/audioAlerts';
+import { playBarkSpikeAlert } from '../../utils/audioAlerts';
 import {
   Timer,
   Terminal,
@@ -328,6 +328,7 @@ export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
 
         <div className="flex items-center space-x-3">
           <button
+            type="button"
             onClick={() => {
               playBarkSpikeAlert();
               onToggleDogAlert(dog.id, 'bark');
@@ -344,25 +345,6 @@ export const CollarControlPanel: React.FC<CollarControlPanelProps> = ({
               <VolumeX className="w-3.5 h-3.5" />
             )}
             <span>Haukku-hälytys</span>
-          </button>
-
-          <button
-            onClick={() => {
-              playStandAlert();
-              onToggleDogAlert(dog.id, 'stand');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1.5 cursor-pointer ${
-              dog.standAlertEnabled
-                ? 'bg-amber-500/30 border-amber-500 text-amber-300'
-                : 'bg-stone-800 border-stone-700 text-stone-400'
-            }`}
-          >
-            {dog.standAlertEnabled ? (
-              <Volume2 className="w-3.5 h-3.5 text-amber-400" />
-            ) : (
-              <VolumeX className="w-3.5 h-3.5" />
-            )}
-            <span>Seisontahälytys</span>
           </button>
         </div>
       </div>
