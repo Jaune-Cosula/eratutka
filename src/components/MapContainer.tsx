@@ -589,7 +589,12 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           // A segment is highlighted purely on barking; movement is deliberately not
           // required. A dog barking at a tree while standing still is the moment a hunter
           // most wants to find on the map, and it used to blend into the ordinary trail.
-          const isBarking = Math.max(pCurr.barkRate || 0, pPrev.barkRate || 0) > 0;
+          // The collar cannot report a bark, so a manual bout (any participant latched it) also
+          // highlights the segment - and because bouts are kept, past ones stay as "ajojälki".
+          const inManualBout = (dog.manualBarkBouts || []).some(
+            (b) => pCurr.timestamp >= b.start && (b.end == null || pCurr.timestamp <= b.end)
+          );
+          const isBarking = inManualBout || Math.max(pCurr.barkRate || 0, pPrev.barkRate || 0) > 0;
 
           if (!currentChunk) {
             currentChunk = {

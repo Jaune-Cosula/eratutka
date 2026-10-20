@@ -240,6 +240,7 @@ export default function App() {
     handleDeleteDog,
     handleUpdateDogTelemetry,
     handleToggleDogAlert,
+    handleToggleManualBark,
   } = useDogTracker({
     sessionCode: currentSession?.code,
     currentUser,
@@ -1272,6 +1273,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             onAddDog={() => setShowAddDogModal(true)}
             onToggleDogAlert={handleToggleDogAlert}
+            onToggleManualBark={handleToggleManualBark}
             onUpdateDogTelemetry={handleUpdateDogTelemetry}
             onDeleteDog={handleDeleteDog}
             onDeleteHunter={handleDeleteHunter}

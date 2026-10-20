@@ -865,6 +865,21 @@ export function mergeDogLists(
       voltage: primary.voltage ?? secondary.voltage,
       hdop: primary.hdop ?? secondary.hdop,
       lastPacketLatencySec: primary.lastPacketLatencySec ?? secondary.lastPacketLatencySec,
+      // Manual bark marker: take the side with the most recent manualBarkAt so a stale copy cannot
+      // clear a bout another client just latched.
+      ...((primary.manualBarkAt ?? 0) >= (secondary.manualBarkAt ?? 0)
+        ? {
+            manualBarkActive: primary.manualBarkActive,
+            manualBarkBy: primary.manualBarkBy,
+            manualBarkAt: primary.manualBarkAt,
+            manualBarkBouts: primary.manualBarkBouts,
+          }
+        : {
+            manualBarkActive: secondary.manualBarkActive,
+            manualBarkBy: secondary.manualBarkBy,
+            manualBarkAt: secondary.manualBarkAt,
+            manualBarkBouts: secondary.manualBarkBouts,
+          }),
     };
 
     mergedMap.set(existing.id, mergedDog);

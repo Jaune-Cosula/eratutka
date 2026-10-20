@@ -36,6 +36,11 @@ export const VIEWER_DOG_FIELDS: readonly string[] = [
   'isActive',
   'barkAlertEnabled',
   'standAlertEnabled',
+  // Manual bark marker is hunt content shared by every participant (see the toggle in the list).
+  'manualBarkActive',
+  'manualBarkBy',
+  'manualBarkAt',
+  'manualBarkBouts',
   'trackerModel',
   'addedBy',
   'addedByUid',

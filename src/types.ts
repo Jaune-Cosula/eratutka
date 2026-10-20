@@ -31,6 +31,13 @@ export interface Dog {
   isActive: boolean;
   barkAlertEnabled: boolean;
   standAlertEnabled: boolean;
+  // Manual bark marker: when the collar cannot report a bark, any participant can latch
+  // "haukkuu" on until someone turns it off. Each bout is kept so the map can draw the
+  // "ajojälki" (the dog's track while the bark was marked).
+  manualBarkActive?: boolean;
+  manualBarkBy?: string;
+  manualBarkAt?: number;
+  manualBarkBouts?: Array<{ start: number; end?: number }>;
   trackerModel?: string; // e.g. "SinoTrack ST-904L", "Tracker Artemi", "Icarii IK122 4G / IK122T Pro", etc.
   imei?: string; // 15-digit IMEI for SinoTrack / 4G tracker
   simNumber?: string; // Phone number in collar for audio listen calls

@@ -21,6 +21,8 @@ interface RadarCollarCardListProps {
   /** This hunter's own collars that are deliberately not in the hunt at all. */
   libraryDogs?: Dog[];
   onShareLibraryDog?: (dog: Dog) => void;
+  /** Any participant can latch the manual bark marker on/off (the collar cannot report a bark). */
+  onToggleManualBark?: (dogId: string) => void;
 }
 
 export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
@@ -37,6 +39,7 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
   onUnshareDog,
   libraryDogs = [],
   onShareLibraryDog,
+  onToggleManualBark,
 }) => {
   const sortedDogs = useMemo(() => {
     if (!selectedDogId) return dogs;
@@ -145,11 +148,47 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                   </div>
                 </div>
 
+                {/* Manual bark marker: the collar cannot report a bark, so any hunter can latch it. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleManualBark?.(dog.id);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
+                      dog.manualBarkActive
+                        ? 'bg-red-600 text-white border-red-500 animate-pulse shadow'
+                        : 'bg-stone-800/60 text-stone-300 border-stone-600 hover:bg-stone-700/70'
+                    }`}
+                  >
+                    🔊 {dog.manualBarkActive ? 'Haukkuu – lopeta' : 'Merkitse haukku'}
+                  </button>
+                  {dog.manualBarkActive && (
+                    <span className="text-[10px] font-mono text-red-300">
+                      {dog.manualBarkBy ? `${dog.manualBarkBy} • ` : ''}
+                      {dog.manualBarkAt
+                        ? new Date(dog.manualBarkAt).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' })
+                        : ''}
+                    </span>
+                  )}
+                </div>
+
                 {/* Status Pill & Actions */}
                 <div className="flex items-start space-x-2">
                   <div className="flex flex-col items-end space-y-1">
                     <div>
-                      {dog.status === 'haukkuu' && (
+                      {dog.manualBarkActive && (
+                        <span className="px-2.5 py-1 rounded-full bg-red-600 text-white font-black text-xs animate-pulse shadow-md mb-1 inline-flex items-center space-x-1">
+                          <span>🔊 HAUKKUU</span>
+                          {dog.speed >= 1.5 && (
+                            <span className="text-[9px] bg-amber-400 text-stone-950 font-black px-1.5 py-0.5 rounded whitespace-nowrap">
+                              🏃 AJO ({dog.speed} km/h)
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {dog.status === 'haukkuu' && !dog.manualBarkActive && (
                         <span className="px-2.5 py-1 rounded-full bg-red-600 text-white font-black text-xs animate-pulse shadow-md flex items-center space-x-1">
                           <span>🔊 {dog.barkRate} HKM</span>
                           {dog.speed >= 1.5 ? (

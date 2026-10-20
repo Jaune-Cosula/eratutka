@@ -59,6 +59,7 @@ interface DogRadarPanelProps {
   libraryDogs?: Dog[];
   onShareLibraryDog?: (dog: Dog) => void;
   onToggleDogAlert: (dogId: string, alertType: 'bark' | 'stand') => void;
+  onToggleManualBark?: (dogId: string) => void;
   onUpdateDogTelemetry?: (dogId: string, updates: Partial<Dog>) => void;
   onDeleteDog?: (dogId: string) => void;
   onDeleteHunter?: (hunterId: string) => void;
@@ -83,6 +84,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
   libraryDogs,
   onShareLibraryDog,
   onToggleDogAlert,
+  onToggleManualBark,
   onUpdateDogTelemetry,
   onDeleteDog,
   onDeleteHunter,
@@ -202,6 +204,7 @@ export const DogRadarPanel: React.FC<DogRadarPanelProps> = ({
             onUnshareDog={onUnshareDog}
             libraryDogs={libraryDogs}
             onShareLibraryDog={onShareLibraryDog}
+            onToggleManualBark={onToggleManualBark}
           />
 
           {/* Right Selected Dog Detailed Telemetry Radar view */}

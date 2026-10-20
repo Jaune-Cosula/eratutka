@@ -784,6 +784,64 @@ export function useDogTracker({
     }
   };
 
+  /**
+   * Manual bark marker. The IK122 collar does not report a usable bark, so any participant can
+   * latch "haukkuu" on when they hear the dog; it stays on until someone toggles it off. Each
+   * bout is recorded so the map can draw the "ajojälki", and it travels to the whole party via
+   * the normal dog sync (the fields are in the viewer projection).
+   */
+  const handleToggleManualBark = (dogId: string) => {
+    const now = Date.now();
+    const by = userNickname || currentUser?.displayName || 'Metsästäjä';
+    const updatedList = dogsRef.current.map((d) => {
+      if (d.id !== dogId) return d;
+      if (d.manualBarkActive) {
+        // Turn off: close any still-open bout.
+        const bouts = (d.manualBarkBouts || []).map((b) => (b.end == null ? { ...b, end: now } : b));
+        return { ...d, manualBarkActive: false, manualBarkBouts: bouts, lastUpdated: now };
+      }
+      // Turn on: start a new bout.
+      const bouts = [...(d.manualBarkBouts || []), { start: now }];
+      return {
+        ...d,
+        manualBarkActive: true,
+        manualBarkBy: by,
+        manualBarkAt: now,
+        manualBarkBouts: bouts,
+        lastUpdated: now,
+      };
+    });
+
+    dogsRef.current = updatedList;
+    setDogs(updatedList);
+
+    if (sessionCode) {
+      persistDogsLocally(updatedList, sessionCode);
+      saveSessionDogs(sessionCode, updatedList);
+      try {
+        const ch = new BroadcastChannel(`eratutka_channel_${sessionCode}`);
+        ch.postMessage({ type: 'UPDATE_DOGS', dogs: updatedList });
+        ch.close();
+      } catch (e) {}
+    }
+  };
+
+  // Play the bark alert when the manual marker is latched on by anyone (false -> true), gated by
+  // each hunter's own Haukku-hälytys toggle. This is the human-powered replacement for collar
+  // bark detection, which does not work on this hardware.
+  const prevManualBarkRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    const prev = prevManualBarkRef.current;
+    for (const d of dogs) {
+      const was = prev.get(d.id) === true;
+      const isOn = d.manualBarkActive === true;
+      if (isOn && !was && d.barkAlertEnabled !== false) {
+        playBarkSpikeAlert();
+      }
+      prev.set(d.id, isOn);
+    }
+  }, [dogs]);
+
   return {
     dogs,
     setDogs,
@@ -794,5 +852,6 @@ export function useDogTracker({
     handleDeleteDog,
     handleUpdateDogTelemetry,
     handleToggleDogAlert,
+    handleToggleManualBark,
   };
 }
