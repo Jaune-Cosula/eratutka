@@ -325,6 +325,8 @@ export interface EvoProps {
   onClaimDog: (dogId: string) => void;
   onDeleteDog: (dogId: string, options?: { keepSaved?: boolean }) => void;
   onToggleDogAlert: (dogId: string, type: 'bark' | 'stand') => void;
+  /** Any participant can latch the manual bark marker on/off (the collar cannot report a bark). */
+  onToggleManualBark: (dogId: string) => void;
   onUpdateDogTelemetry: (dogId: string, updates: Partial<Dog>) => void;
   onSendMessage: (text: string, category?: 'alert' | 'info' | 'action') => void;
   onUpdateMemberStatus: (memberId: string, status: HunterStatus) => void;

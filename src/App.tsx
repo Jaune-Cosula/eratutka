@@ -1155,6 +1155,7 @@ export default function App() {
     onClaimDog: rememberMyDog,
     onDeleteDog: handleDeleteDog,
     onToggleDogAlert: handleToggleDogAlert,
+    onToggleManualBark: handleToggleManualBark,
     onUpdateDogTelemetry: handleUpdateDogTelemetry,
     onSendMessage: handleSendMessage,
     onUpdateMemberStatus: handleUpdateMemberStatus,
