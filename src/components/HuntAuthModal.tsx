@@ -7,6 +7,7 @@ import {
   saveSessionToFirebase,
   createSessionOnServer,
   resolveSessionKey,
+  checkSessionKey,
   setActiveHuntKey,
 } from '../services/userService';
 
@@ -247,6 +248,23 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
 
       huntKey = resolved.huntKey;
       sessionInfo = resolved.sessionInfo;
+    } else {
+      // The link itself is proof enough locally, but the server may have forgotten the hunt
+      // (its sessions live in memory). Joining then would silently replace a working hunt with
+      // one that can never sync, so ask first. Offline is left alone: the hunter may be in the
+      // forest with a saved link, and 'unknown' therefore does not block.
+      setIsCheckingCloud(true);
+      const keyStatus = await checkSessionKey(upperCode, huntKey);
+      setIsCheckingCloud(false);
+
+      if (keyStatus === 'unavailable') {
+        setErrorMessage(
+          language === 'fi'
+            ? 'Tätä jahtipäivää ei ole enää palvelimella (esimerkiksi palvelin on käynnistetty uudelleen). Pyydä jahtimestaria luomaan uusi jahti.'
+            : 'This hunt is no longer on the server (for example, the server was restarted). Ask the hunt master to create a new one.'
+        );
+        return;
+      }
     }
 
     setActiveHuntKey(huntKey);

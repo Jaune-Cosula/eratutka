@@ -1032,6 +1032,34 @@ export const createSessionOnServer = async (
 };
 
 /**
+ * What the server says about a capability key before we adopt the hunt it belongs to.
+ *
+ * `unavailable` means the server answered and does not know the session (its memory does not
+ * survive a restart) or does not accept this key. `unknown` is offline or an unreadable
+ * response: the caller should let the hunter in anyway rather than lock them out in the forest.
+ */
+export type SessionKeyStatus = 'ok' | 'unavailable' | 'unknown';
+
+export const checkSessionKey = async (code: string, huntKey: string): Promise<SessionKeyStatus> => {
+  const cleanCode = String(code || '').toUpperCase().trim();
+  const key = String(huntKey || '').trim();
+  if (!cleanCode || !key) return 'unavailable';
+
+  try {
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(cleanCode)}/relay?clientId=${encodeURIComponent(localClientId)}`,
+      { headers: { 'X-Hunt-Key': key } }
+    );
+    if (!resp.ok) return 'unknown';
+    const json: any = await resp.json().catch(() => null);
+    if (!json || json.success !== true) return 'unknown';
+    return json.exists ? 'ok' : 'unavailable';
+  } catch {
+    return 'unknown';
+  }
+};
+
+/**
  * Exchanges a hunt code + PIN for the session's capability key. Only succeeds while the
  * server still remembers the session; after a restart the share link is the way in.
  */

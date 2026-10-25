@@ -93,6 +93,27 @@ function makeUniqueNickname(desired: string, existingNames: string[]): string {
   return `${base} (${Date.now() % 1000})`;
 }
 
+/**
+ * Removes a hunt invite from the URL once it has been used or dismissed.
+ *
+ * A share link carries `?huntCode=` and `#huntKey=`. Left in the address bar, it outlives the
+ * hunt it points at: the URL effect in App saw the old code after a new hunt was created and
+ * re-opened the join modal, and a later "join" from that modal switched the device back to the
+ * stale hunt. Other params (e.g. `ui=evo`) are preserved.
+ */
+function clearHuntInviteFromUrl(): void {
+  try {
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+    if (!url.searchParams.has('huntCode') && !hashParams.has('huntKey')) return;
+    url.searchParams.delete('huntCode');
+    hashParams.delete('huntKey');
+    const hash = hashParams.toString();
+    url.hash = hash ? `#${hash}` : '';
+    window.history.replaceState(null, '', url.toString());
+  } catch {}
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'map' | 'radar' | 'team' | 'annotations' | 'ruler'>('map');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
@@ -905,6 +926,10 @@ export default function App() {
   };
 
   const handleSessionCreatedOrJoined = async (session: HuntSession, initialDogs?: Dog[]) => {
+    // The invite that got us here is spent. Clearing it before setCurrentSession also stops
+    // the URL effect below from re-opening the join modal over the hunt we just entered.
+    clearHuntInviteFromUrl();
+
     // The capability key must be armed before anything reads or writes the session.
     setActiveHuntKey(session.huntKey);
     setSessionAccessError(false);
@@ -1102,10 +1127,18 @@ export default function App() {
   };
 
   const handleLeaveSession = () => {
+    clearHuntInviteFromUrl();
     setCurrentSession(null);
     localStorage.removeItem('eratutka_session');
     setShowShareModal(false);
     setShowSessionAuthModal(true);
+  };
+
+  // Dismissing the modal also dismisses the invite behind it: otherwise a reload would pick
+  // the same URL up and ask to join the stale hunt again.
+  const handleCloseSessionAuthModal = () => {
+    clearHuntInviteFromUrl();
+    setShowSessionAuthModal(false);
   };
 
   // Everything the Evo UI needs. Hooks stay here in App (Evo never calls a data hook of
@@ -1334,7 +1367,7 @@ export default function App() {
       {showSessionAuthModal && (
         <HuntAuthModal
           onSessionCreatedOrJoined={handleSessionCreatedOrJoined}
-          onClose={() => setShowSessionAuthModal(false)}
+          onClose={handleCloseSessionAuthModal}
           isDarkMode={isDarkMode}
           canCloseWithoutSession={Boolean(currentSession)}
           currentDogs={dogs}
