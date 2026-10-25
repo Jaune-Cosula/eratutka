@@ -38,8 +38,13 @@ export const ShareSessionModal: React.FC<ShareSessionModalProps> = ({
 
   // The capability key goes into the URL fragment, not the query string: a fragment is
   // never sent to the server and never leaks through the Referer header.
+  // `restore` is the server-sealed token that lets a restarted instance rebuild the hunt;
+  // without it, a link is only usable while the server still remembers the session.
+  const restorePart = session.restoreToken
+    ? `&restore=${encodeURIComponent(session.restoreToken)}`
+    : '';
   const inviteUrl = session.huntKey
-    ? `${window.location.origin}${window.location.pathname}?huntCode=${session.code}#huntKey=${session.huntKey}`
+    ? `${window.location.origin}${window.location.pathname}?huntCode=${session.code}#huntKey=${session.huntKey}${restorePart}`
     : `${window.location.origin}${window.location.pathname}?huntCode=${session.code}`;
   const readableKey = formatHuntKey(session.huntKey);
   const shareText = language === 'fi'

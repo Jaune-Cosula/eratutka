@@ -13,6 +13,18 @@ export const setActiveHuntKey = (huntKey: string | null | undefined): void => {
 
 export const getActiveHuntKey = (): string | null => activeHuntKey;
 
+/**
+ * Sealed restore token for the active hunt. Sent alongside the key so a server instance that
+ * has never seen this hunt (restart, Cloud Run scale-to-zero) can rebuild it from the token.
+ */
+let activeRestoreToken: string | null = null;
+
+export const setActiveRestoreToken = (token: string | null | undefined): void => {
+  activeRestoreToken = token && String(token).trim() ? String(token).trim() : null;
+};
+
+export const getActiveRestoreToken = (): string | null => activeRestoreToken;
+
 /** The signed-in user's uid, mirrored here so the delete path can carry it without prop drilling. */
 let activeUid: string | null = null;
 
@@ -26,5 +38,6 @@ export const getActiveUid = (): string | null => activeUid;
 export const relayAuthHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (activeHuntKey) headers['X-Hunt-Key'] = activeHuntKey;
+  if (activeRestoreToken) headers['X-Hunt-Restore'] = activeRestoreToken;
   return headers;
 };

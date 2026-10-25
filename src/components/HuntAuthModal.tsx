@@ -9,6 +9,7 @@ import {
   resolveSessionKey,
   checkSessionKey,
   setActiveHuntKey,
+  setActiveRestoreToken,
 } from '../services/userService';
 
 interface HuntAuthModalProps {
@@ -48,11 +49,14 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
   const paramHuntCode = urlParams.get('huntCode');
   // The capability key travels in the URL fragment: browsers never send a fragment to
   // the server and never leak it through the Referer header, unlike a query parameter.
-  const paramHuntKey = (() => {
+  const hashParams = (() => {
     const hash = window.location.hash.replace(/^#/, '');
-    if (!hash) return null;
-    return new URLSearchParams(hash).get('huntKey');
+    return new URLSearchParams(hash);
   })();
+  const paramHuntKey = hashParams.get('huntKey');
+  // Sealed server token that lets a restarted/scale-to-zero server rebuild this hunt. Optional:
+  // links handed out before restore tokens existed simply lack it.
+  const paramRestoreToken = hashParams.get('restore');
 
   const [activeTab, setActiveTab] = useState<'create' | 'join'>(paramHuntCode ? 'join' : 'create');
 
@@ -173,6 +177,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
       code: created.code,
       password: createPassword.trim(),
       huntKey: created.huntKey,
+      restoreToken: created.restoreToken,
       creatorName: createNickname.trim(),
       createdAt: Date.now(),
       myRole: 'Jahtimestari',
@@ -182,6 +187,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
 
     // Arm the relay key before the first push, otherwise the server rejects it.
     setActiveHuntKey(created.huntKey);
+    setActiveRestoreToken(created.restoreToken);
 
     // Initialize Creator as first team member
     const creatorMember: TeamMember = {
@@ -222,8 +228,10 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
 
     const upperCode = joinCode.trim().toUpperCase();
 
-    // Route 1: the share link already carries the capability key.
+    // Route 1: the share link already carries the capability key and, in newer links, the
+    // sealed restore token.
     let huntKey: string | null = paramHuntKey;
+    let restoreToken: string | undefined = paramRestoreToken || undefined;
     let sessionInfo: Partial<HuntSession> | undefined;
 
     // Route 2: only a code and the PIN — the server exchanges them for the key.
@@ -247,6 +255,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
       }
 
       huntKey = resolved.huntKey;
+      restoreToken = resolved.restoreToken;
       sessionInfo = resolved.sessionInfo;
     } else {
       // The link itself is proof enough locally, but the server may have forgotten the hunt
@@ -254,7 +263,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
       // one that can never sync, so ask first. Offline is left alone: the hunter may be in the
       // forest with a saved link, and 'unknown' therefore does not block.
       setIsCheckingCloud(true);
-      const keyStatus = await checkSessionKey(upperCode, huntKey);
+      const keyStatus = await checkSessionKey(upperCode, huntKey, restoreToken);
       setIsCheckingCloud(false);
 
       if (keyStatus === 'unavailable') {
@@ -268,6 +277,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
     }
 
     setActiveHuntKey(huntKey);
+    setActiveRestoreToken(restoreToken);
 
     const newSession: HuntSession = {
       id: `session-joined-${Date.now()}`,
@@ -278,6 +288,7 @@ export const HuntAuthModal: React.FC<HuntAuthModalProps> = ({
       // The PIN is verified by the server and never handed back to a joining client.
       password: sessionInfo?.password,
       huntKey,
+      restoreToken,
       creatorName: sessionInfo?.creatorName || (language === 'fi' ? 'Jahtimestari' : 'Hunt Master'),
       createdAt: sessionInfo?.createdAt || Date.now(),
       myRole: joinRole,

@@ -61,8 +61,10 @@ import {
   saveSessionTeamPositions,
   saveSessionRadio,
   setActiveHuntKey,
+  setActiveRestoreToken,
   setActiveUid,
   setSessionAccessDeniedHandler,
+  isSessionSeeded,
 } from './services/userService';
 import { UserAuthModal } from './components/UserAuthModal';
 import { VersionUpdateChecker } from './components/VersionUpdateChecker';
@@ -105,9 +107,12 @@ function clearHuntInviteFromUrl(): void {
   try {
     const url = new URL(window.location.href);
     const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
-    if (!url.searchParams.has('huntCode') && !hashParams.has('huntKey')) return;
+    if (!url.searchParams.has('huntCode') && !hashParams.has('huntKey') && !hashParams.has('restore')) {
+      return;
+    }
     url.searchParams.delete('huntCode');
     hashParams.delete('huntKey');
+    hashParams.delete('restore');
     const hash = hashParams.toString();
     url.hash = hash ? `#${hash}` : '';
     window.history.replaceState(null, '', url.toString());
@@ -236,8 +241,10 @@ export default function App() {
   const [sessionAccessError, setSessionAccessError] = useState<boolean>(false);
 
   // Arm the capability key of the active session before any effect or callback runs.
-  // Without it the relay and Firestore refuse to serve the session.
+  // Without it the relay and Firestore refuse to serve the session. The sealed restore token
+  // rides along so a server instance that has forgotten the hunt can rebuild it.
   setActiveHuntKey(currentSession?.huntKey);
+  setActiveRestoreToken(currentSession?.restoreToken);
   setActiveUid(currentUser?.uid);
 
   // A rejected relay write means the stored key is no longer valid (e.g. the hunt was
@@ -523,6 +530,33 @@ export default function App() {
     localStorage.setItem('eratutka_annotations', JSON.stringify(annotations));
   }, [annotations, currentSession?.code]);
 
+  // A server that has forgotten the hunt (restart, Cloud Run scale-to-zero) rebuilds an empty
+  // record from the sealed restore token. Seed it from this device's copy once on load, or the
+  // rest of the party would get empty team and radio lists until someone's next push.
+  useEffect(() => {
+    const session = currentSession;
+    if (!session?.code || !session.restoreToken) return;
+
+    let cancelled = false;
+    (async () => {
+      // The check also performs the restore, so a `false` answer means "the hunt is now known
+      // to the server but still empty"; `null` (offline) is left to the normal push path.
+      const seeded = await isSessionSeeded(session.code);
+      if (cancelled || seeded !== false) return;
+      saveSessionToFirebase(
+        session,
+        dogsRef.current,
+        annotationsRef.current,
+        teamRef.current,
+        radioMessagesRef.current
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSession?.code]);
+
   // Real-Time Cross-Tab / Cross-Window Synchronization Listener
   useEffect(() => {
     if (!currentSession) return;
@@ -653,10 +687,12 @@ export default function App() {
           if (!prev) return data.session || null;
           return {
             ...data.session,
-            // The shared session payload deliberately carries no secrets, so the key and
-            // PIN must be carried over from our own copy or the hunt loses its access.
+            // The shared session payload deliberately carries no secrets, so the key, PIN
+            // and restore token must be carried over from our own copy or the hunt loses
+            // its access.
             password: prev.password,
             huntKey: prev.huntKey,
+            restoreToken: prev.restoreToken,
             myRole: prev.myRole,
             myNickname: prev.myNickname,
             isJahtimestari: prev.isJahtimestari,
@@ -932,6 +968,7 @@ export default function App() {
 
     // The capability key must be armed before anything reads or writes the session.
     setActiveHuntKey(session.huntKey);
+    setActiveRestoreToken(session.restoreToken);
     setSessionAccessError(false);
 
     // 1. Fetch cloud session state if it exists in Firestore
@@ -941,9 +978,10 @@ export default function App() {
     if (cloudData && cloudData.sessionInfo) {
       finalSession = {
         ...cloudData.sessionInfo,
-        // The PIN is never returned by the server, and the key is ours to hold.
+        // The PIN is never returned by the server, and the key and restore token are ours to hold.
         password: session.password,
         huntKey: session.huntKey,
+        restoreToken: session.restoreToken,
         myNickname: session.myNickname,
         myRole: session.myRole,
         isJahtimestari: session.isJahtimestari,
@@ -951,6 +989,7 @@ export default function App() {
     }
 
     setActiveHuntKey(finalSession.huntKey);
+    setActiveRestoreToken(finalSession.restoreToken);
     setCurrentSession(finalSession);
     localStorage.setItem('eratutka_session', JSON.stringify(finalSession));
     setShowSessionAuthModal(false);

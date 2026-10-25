@@ -45,11 +45,13 @@ Tämä tiedosto sisältää Erätutka-sovelluksen arkkitehtuuriohjeet, kriittise
 * Jahtiavain generoidaan **palvelimella** (`POST /api/session/create`), samoin koodi. Palvelin tallentaa avaimen muistiinsa ja PINistä vain scrypt-tiivisteen.
 * PIN ei saa koskaan päätyä verkkoon eikä jaettuun sessiotietoon: `stripSessionSecrets` poistaa sen ennen relay-pushia ja Firestore-kirjoitusta.
 * Avain kulkee jakolinkin **fragmentissa** (`?huntCode=X#huntKey=Y`), ei query-parametrissa. Fragmenttia selain ei lähetä palvelimelle eikä välitä Referer-otsikossa.
-* Session tilaus (`subscribeToSessionFirebase`) korvaa session tiedot jaetulla `sessionInfo`-objektilla, josta salaisuudet on siivottu. **Kun yhdistät sen `currentSession`-tilaan, säilytä `password` ja `huntKey` aiemmasta tilasta** (`App.tsx`), muuten avain katoaa ja synkronointi katkeaa.
+* **Palautusmerkki (`restoreToken`)**: sessiot elävät vain palvelimen muistissa, joten Cloud Runin scale-to-zero tai uudelleenkäynnistys hävittää ne. `POST /api/session/create` ja `/resolve` palauttavat salaisella avaimella sinetöidyn merkin (`AES-256-GCM`; sisältää koodin, avaimen ja PIN-tiivisteen). Se kulkee jakolinkin fragmentissa (`#huntKey=Y&restore=Z`) ja `X-Hunt-Restore`-otsikossa. Relay saa rakentaa tyhjän session uudelleen vain, jos merkki avautuu ja vastaa esitettyä `(code, key)`-paria — pelkkä koodi ei riitä (tämä on H5-korjauksen ehto). Merkki vaatii vakaan `SESSION_RESTORE_SECRET`-ympäristömuuttujan (fallback `GATEWAY_SECRET`); ilman sitä palautus on pois päältä. Älä lisää endpointtia, joka myöntää merkin pelkällä koodilla tai avaimella.
+* Palautettu sessio on aluksi `seeded: false`, eikä relay palauta sen tyhjiä listoja muille clienteille. Ensimmäinen täysi push (`sessionInfo` mukana) siementää sen; `App.tsx` tekee sen latauksessa omasta localStoragesta.
+* Session tilaus (`subscribeToSessionFirebase`) korvaa session tiedot jaetulla `sessionInfo`-objektilla, josta salaisuudet on siivottu. **Kun yhdistät sen `currentSession`-tilaan, säilytä `password`, `huntKey` ja `restoreToken` aiemmasta tilasta** (`App.tsx`), muuten avain katoaa ja synkronointi katkeaa.
 
 #### Hyväksytyt rajoitukset
 * Avaimen haltija voi kirjoittaa kaiken (myös poistaa koiria ja esiintyä jahtimestarina). Roolikohtaiset oikeudet vaatisivat jäsenkohtaiset tokenit.
-* PIN-koodilla liittyminen vaatii, että palvelin muistaa session. Palvelimen uudelleenkäynnistyksen jälkeen `/api/session/resolve` ei tunne sessiota ja käyttäjää kehotetaan käyttämään jakolinkkiä — linkki toimii aina, koska se kantaa avaimen.
+* PIN-koodilla liittyminen vaatii, että palvelin muistaa session. Uudelleenkäynnistyksen jälkeen uusi jakolinkki (jossa on `restore`-merkki) herättää session ja palauttaa myös PIN-tiivisteen, joten koodi+PIN toimii jälleen. Vanhat linkit ilman merkkiä eivät palauta sessiota.
 * Epäonnistuneet PIN-yritykset rajoitetaan 10 yritykseen / 5 min per jahtikoodi. Raja on koodikohtainen (ei IP-kohtainen), koska sovellus on välityspalvelimen takana ja kaikki clientit jakaisivat saman IP-osoitteen.
 
 ---

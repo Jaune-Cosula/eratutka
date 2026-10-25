@@ -84,6 +84,12 @@ export interface HuntSession {
    * Vain hash tallennetaan palvelimelle.
    */
   huntKey?: string;
+  /**
+   * Palvelimen sinetöimä palautusmerkki (code + avain + PIN-tiiviste). Sen avulla uusi
+   * palvelininstanssi voi herättää jahdin uudelleen, vaikka sessiot elävät vain muistissa.
+   * Kulkee jakolinkin fragmentissa avaimen rinnalla.
+   */
+  restoreToken?: string;
   creatorName: string;
   createdAt: number;
   myRole: HunterRole;

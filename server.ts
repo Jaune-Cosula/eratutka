@@ -60,6 +60,27 @@ function gatewayAuthHeader(): Record<string, string> {
 }
 
 /**
+ * Secret that seals the hunt restore token. The token lets a client re-establish a hunt that
+ * a restarted server no longer remembers, which on Cloud Run happens every time the service
+ * scales to zero. It must therefore be stable across instances and restarts, i.e. come from
+ * the environment - a per-process random value would defeat the whole point.
+ *
+ * Falls back to GATEWAY_SECRET so an existing deployment gets the behaviour without a new
+ * variable, but a dedicated SESSION_RESTORE_SECRET is preferred. Empty => restore disabled.
+ */
+const SESSION_RESTORE_SECRET = (
+  process.env.SESSION_RESTORE_SECRET || process.env.GATEWAY_SECRET || ''
+).trim();
+const SESSION_RESTORE_KEY = SESSION_RESTORE_SECRET
+  ? crypto.createHash('sha256').update(`eratutka-session-restore:${SESSION_RESTORE_SECRET}`).digest()
+  : null;
+if (!SESSION_RESTORE_KEY) {
+  console.warn(
+    '[sessions] SESSION_RESTORE_SECRET puuttuu: jahti ei palaudu palvelimen uudelleenkäynnistyksen jälkeen.'
+  );
+}
+
+/**
  * Phase 2 (H2): device HTTP ingest is reachable only through the self-hosted gateway, which
  * forwards with the shared X-Gateway-Secret (see gatewayAuthHeader). A browser or direct caller
  * cannot forge it. Env-gated: an empty secret leaves the gate open, so the secret can be set on
@@ -2026,6 +2047,12 @@ interface LiveSessionData {
    */
   revivedDogIds?: Map<string, number>;
   /**
+   * Whether the hunt's contents have ever arrived from a client. A record rebuilt from a
+   * restore token starts empty; until a real push seeds it, relay reads stay muted so other
+   * hunters' devices do not replace their local team, radio log and markers with empty lists.
+   */
+  seeded?: boolean;
+  /**
    * Session access control. `huntKey` is stored in plaintext on purpose: the server
    * must be able to hand it out from /api/session/resolve to participants who only
    * know the code and PIN, and the same in-memory record already holds every position
@@ -2076,6 +2103,83 @@ function safeEqualString(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+interface SessionRestorePayload {
+  /** Hunt code the token belongs to. */
+  c: string;
+  /** Capability key; the caller must also present it as X-Hunt-Key. */
+  k: string;
+  /** PIN verifier, sealed so code+PIN joining keeps working after a server restart. */
+  p?: string;
+  s?: string;
+}
+
+/**
+ * Seals a hunt's access credentials into a token the client can present to a server that has
+ * forgotten the hunt. AES-GCM is used instead of a bare HMAC so the payload - which contains
+ * the PIN verifier - stays unreadable, while the authentication tag still makes it unforgeable.
+ */
+function mintSessionRestoreToken(code: string, data: LiveSessionData): string | undefined {
+  if (!SESSION_RESTORE_KEY || !data.huntKey) return undefined;
+  const payload: SessionRestorePayload = {
+    c: code,
+    k: data.huntKey,
+    ...(data.pinHash && data.pinSalt ? { p: data.pinHash, s: data.pinSalt } : {}),
+  };
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', SESSION_RESTORE_KEY, iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(payload), 'utf8'),
+    cipher.final(),
+  ]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64url');
+}
+
+function openSessionRestoreToken(token: string): SessionRestorePayload | null {
+  if (!SESSION_RESTORE_KEY || !token) return null;
+  try {
+    const raw = Buffer.from(String(token), 'base64url');
+    // 12-byte IV + 16-byte GCM tag + at least one byte of ciphertext.
+    if (raw.length < 29) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', SESSION_RESTORE_KEY, raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    const json = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8');
+    const parsed = JSON.parse(json);
+    if (!parsed || typeof parsed.c !== 'string' || typeof parsed.k !== 'string') return null;
+    if (!HUNT_KEY_PATTERN.test(parsed.k)) return null;
+    return {
+      c: parsed.c,
+      k: parsed.k,
+      ...(typeof parsed.p === 'string' && typeof parsed.s === 'string'
+        ? { p: parsed.p, s: parsed.s }
+        : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rebuilds an empty session record from a restore token, but only when the caller also
+ * presents the capability key the token was sealed for. The token binds (code, key) to a
+ * hunt the server itself created, so someone who only knows the code still cannot claim the
+ * session - the gap that made client-supplied key re-registration unsafe.
+ */
+function restoreSessionFromToken(req: express.Request, code: string): LiveSessionData | null {
+  const token = String(req.get('x-hunt-restore') || '').trim();
+  if (!token) return null;
+  const payload = openSessionRestoreToken(token);
+  if (!payload || payload.c !== code) return null;
+  const providedKey = getProvidedHuntKey(req);
+  if (!providedKey || !safeEqualString(providedKey, payload.k)) return null;
+
+  const record = createSessionRecord(code, payload.k);
+  if (payload.p && payload.s) {
+    record.pinHash = payload.p;
+    record.pinSalt = payload.s;
+  }
+  return record;
+}
+
 /**
  * Builds a fresh session record with access credentials attached. The PIN is optional:
  * a participant arriving through a share link holds the key but not the PIN, and after
@@ -2095,6 +2199,8 @@ function createSessionRecord(code: string, huntKey: string, pin?: string): LiveS
     activeClients: new Map(),
     deletedDogIds: new Set(),
     huntKey,
+    // Empty until a client push carries the hunt's contents.
+    seeded: false,
   };
 
   const cleanPin = String(pin || '').trim();
@@ -2401,9 +2507,15 @@ app.post('/api/session/create', (req, res) => {
     }
 
     const huntKey = generateHuntKey();
-    sessionLiveStore.set(code, createSessionRecord(code, huntKey, pin));
+    const record = createSessionRecord(code, huntKey, pin);
+    sessionLiveStore.set(code, record);
 
-    return res.json({ success: true, code, huntKey });
+    return res.json({
+      success: true,
+      code,
+      huntKey,
+      restoreToken: mintSessionRestoreToken(code, record),
+    });
   } catch (err: any) {
     return serverError(res, err, 'Jahtisession luonti epäonnistui.');
   }
@@ -2452,7 +2564,13 @@ app.post('/api/session/resolve', (req, res) => {
     const info = data.sessionInfo && typeof data.sessionInfo === 'object' ? { ...data.sessionInfo } : {};
     delete info.password;
 
-    return res.json({ success: true, code, huntKey: data.huntKey, sessionInfo: info });
+    return res.json({
+      success: true,
+      code,
+      huntKey: data.huntKey,
+      sessionInfo: info,
+      restoreToken: mintSessionRestoreToken(code, data),
+    });
   } catch (err: any) {
     return serverError(res, err, 'Jahtisession avaus epäonnistui.');
   }
@@ -2546,17 +2664,24 @@ app.post('/api/session/:code/relay', (req, res) => {
     const { sessionInfo, dogs, annotations, members, radioMessages, clientId, revivedDogIds } = req.body;
     const now = Date.now();
 
-    const existing = sessionLiveStore.get(code);
+    let existing = sessionLiveStore.get(code);
     if (!existing) {
       // Phase 2 (H5): a client-supplied key must never mint a session. Previously any
       // well-formed 32-hex key re-created the record, so anyone who knew (or guessed) a code
-      // could invent a key and become that code's session authority. Sessions are created only
-      // by /api/session/create; a session lost to a server restart must be recreated by its owner.
-      return res.status(403).json({
-        success: false,
-        error: 'SESSION_UNKNOWN',
-        message: 'Jahtisessio ei ole enää palvelimella. Jahtipäivän luojan on luotava jahti uudelleen; muut liittyvät uudelleen koodilla ja PIN-koodilla tai jakolinkillä.',
-      });
+      // could invent a key and become that code's session authority. A record is now rebuilt
+      // only from a restore token the server itself sealed for this (code, key) pair, which
+      // proves the hunt already existed - e.g. before Cloud Run recycled the instance.
+      const restored = restoreSessionFromToken(req, code);
+      if (restored) {
+        sessionLiveStore.set(code, restored);
+        existing = restored;
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: 'SESSION_UNKNOWN',
+          message: 'Jahtisessio ei ole enää palvelimella. Avaa jahtimestarin jakolinkki uudelleen tai luo uusi jahti.',
+        });
+      }
     }
     if (!sessionKeyGranted(req, existing)) {
       return denySessionAccess(res, 'Ei oikeutta tähän jahtiin.');
@@ -2633,7 +2758,12 @@ app.post('/api/session/:code/relay', (req, res) => {
       existing.isIdleStandby = true;
     }
 
-    if (sessionInfo) existing.sessionInfo = sessionInfo;
+    if (sessionInfo) {
+      existing.sessionInfo = sessionInfo;
+      // A full save (create, join, or the one-time restore push) is what marks a rebuilt
+      // record as populated; live telemetry pushes alone must not expose empty team/radio.
+      existing.seeded = true;
+    }
     if (Array.isArray(annotations)) existing.annotations = annotations;
     if (Array.isArray(members)) existing.members = members;
     if (Array.isArray(radioMessages)) existing.radioMessages = radioMessages;
@@ -2661,7 +2791,16 @@ app.get('/api/session/:code/relay', (req, res) => {
     const clientId = String(req.query.clientId || '');
     const now = Date.now();
 
-    const data = sessionLiveStore.get(code);
+    let data = sessionLiveStore.get(code);
+    // A client that holds the sealed restore token can wake a hunt the server has forgotten
+    // (Cloud Run scale-to-zero, restart) without waiting for its next push.
+    if (!data) {
+      const restored = restoreSessionFromToken(req, code);
+      if (restored) {
+        sessionLiveStore.set(code, restored);
+        data = restored;
+      }
+    }
     // A missing session and an unauthorized one get the identical response, so that
     // polling cannot be used to learn which session codes exist.
     if (!data || !sessionKeyGranted(req, data)) {
@@ -2683,6 +2822,21 @@ app.get('/api/session/:code/relay', (req, res) => {
       }
     }
 
+    // A record rebuilt from a restore token is still empty. Reporting it as an update would
+    // replace the other hunters' local team and radio log with empty lists; stay quiet until
+    // a full push (which carries sessionInfo) has seeded it.
+    if (!data.seeded) {
+      return res.json({
+        success: true,
+        exists: true,
+        updated: false,
+        timestamp: data.updatedAt,
+        isIdleStandby: data.isIdleStandby,
+        activeClientsCount: data.activeClients.size,
+        seeded: false,
+      });
+    }
+
     if (since && data.updatedAt <= since) {
       return res.json({
         success: true,
@@ -2691,6 +2845,7 @@ app.get('/api/session/:code/relay', (req, res) => {
         timestamp: data.updatedAt,
         isIdleStandby: data.isIdleStandby,
         activeClientsCount: data.activeClients.size,
+        seeded: true,
       });
     }
 
@@ -2719,6 +2874,7 @@ app.get('/api/session/:code/relay', (req, res) => {
       timestamp: data.updatedAt,
       isIdleStandby: data.isIdleStandby,
       activeClientsCount: data.activeClients.size,
+      seeded: true,
       deletedDogIds: deletedWire,
       revivedDogIds: revivedWire,
       data: {

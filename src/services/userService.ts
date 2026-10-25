@@ -22,6 +22,8 @@ import {
 import {
   setActiveHuntKey as setSessionHuntKey,
   getActiveHuntKey,
+  setActiveRestoreToken as setSessionRestoreToken,
+  getActiveRestoreToken,
   relayAuthHeaders,
   setActiveUid,
   getActiveUid,
@@ -118,7 +120,18 @@ export const setActiveHuntKey = (huntKey: string | null | undefined): void => {
   setDeletedRegistrySecret(getActiveHuntKey());
 };
 
-export { getActiveHuntKey, relayAuthHeaders, setActiveUid, getActiveUid };
+export {
+  getActiveHuntKey,
+  getActiveRestoreToken,
+  relayAuthHeaders,
+  setActiveUid,
+  getActiveUid,
+};
+
+/** Sets the hunt's sealed restore token, sent with relay requests so a fresh server can rebuild the hunt. */
+export const setActiveRestoreToken = (token: string | null | undefined): void => {
+  setSessionRestoreToken(token);
+};
 
 /** The 'DEFAULT' code is a purely local bucket and never has a session on the server. */
 const isRemoteSession = (code: string): boolean => Boolean(code) && code !== 'DEFAULT';
@@ -129,6 +142,7 @@ const stripSessionSecrets = (info: unknown): unknown => {
   const copy: Record<string, unknown> = { ...(info as Record<string, unknown>) };
   delete copy.password;
   delete copy.huntKey;
+  delete copy.restoreToken;
   return copy;
 };
 
@@ -998,11 +1012,13 @@ export const saveSessionToFirebase = async (
 export interface CreateSessionResult {
   code?: string;
   huntKey?: string;
+  restoreToken?: string;
   error?: string;
 }
 
 export interface ResolveSessionResult {
   huntKey?: string;
+  restoreToken?: string;
   sessionInfo?: Partial<HuntSession>;
   error?: string;
 }
@@ -1023,7 +1039,11 @@ export const createSessionOnServer = async (
     });
     const json: any = await resp.json().catch(() => null);
     if (resp.ok && json && json.success && json.code && json.huntKey) {
-      return { code: String(json.code), huntKey: String(json.huntKey) };
+      return {
+        code: String(json.code),
+        huntKey: String(json.huntKey),
+        restoreToken: json.restoreToken ? String(json.restoreToken) : undefined,
+      };
     }
     return { error: (json && json.message) || 'Jahtipäivän luonti epäonnistui.' };
   } catch {
@@ -1040,15 +1060,24 @@ export const createSessionOnServer = async (
  */
 export type SessionKeyStatus = 'ok' | 'unavailable' | 'unknown';
 
-export const checkSessionKey = async (code: string, huntKey: string): Promise<SessionKeyStatus> => {
+export const checkSessionKey = async (
+  code: string,
+  huntKey: string,
+  restoreToken?: string
+): Promise<SessionKeyStatus> => {
   const cleanCode = String(code || '').toUpperCase().trim();
   const key = String(huntKey || '').trim();
   if (!cleanCode || !key) return 'unavailable';
 
   try {
+    const headers: Record<string, string> = { 'X-Hunt-Key': key };
+    // A sealed token is proof the hunt existed, so the server may rebuild it on this very
+    // check instead of answering "not on the server" after a restart.
+    const token = String(restoreToken || '').trim();
+    if (token) headers['X-Hunt-Restore'] = token;
     const resp = await fetch(
       `/api/session/${encodeURIComponent(cleanCode)}/relay?clientId=${encodeURIComponent(localClientId)}`,
-      { headers: { 'X-Hunt-Key': key } }
+      { headers }
     );
     if (!resp.ok) return 'unknown';
     const json: any = await resp.json().catch(() => null);
@@ -1056,6 +1085,30 @@ export const checkSessionKey = async (code: string, huntKey: string): Promise<Se
     return json.exists ? 'ok' : 'unavailable';
   } catch {
     return 'unknown';
+  }
+};
+
+/**
+ * Whether the server holds this hunt's contents, not merely a shell rebuilt from the restore
+ * token. `null` means the answer is unknown (offline, unreadable response).
+ *
+ * The relay GET carries the restore token, so asking this question is also what wakes a hunt
+ * the server has forgotten; a `false` answer tells the caller to push its local state.
+ */
+export const isSessionSeeded = async (sessionCode: string): Promise<boolean | null> => {
+  const code = String(sessionCode || '').toUpperCase().trim();
+  if (!code || !isRemoteSession(code) || !getActiveHuntKey()) return null;
+  try {
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(code)}/relay?clientId=${encodeURIComponent(localClientId)}`,
+      { headers: relayAuthHeaders() }
+    );
+    if (!resp.ok) return null;
+    const json: any = await resp.json().catch(() => null);
+    if (!json || json.success !== true) return null;
+    return json.exists === true && json.seeded === true;
+  } catch {
+    return null;
   }
 };
 
@@ -1077,6 +1130,7 @@ export const resolveSessionKey = async (
     if (resp.ok && json && json.success && json.huntKey) {
       return {
         huntKey: String(json.huntKey),
+        restoreToken: json.restoreToken ? String(json.restoreToken) : undefined,
         sessionInfo: json.sessionInfo as Partial<HuntSession>,
       };
     }
