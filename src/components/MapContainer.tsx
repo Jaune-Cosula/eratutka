@@ -32,9 +32,11 @@ function extendBoundsSafely(bounds: L.LatLngBounds, lat: unknown, lng: unknown):
 /**
  * Colour of a track segment where the collar reported a bark. Deliberately not the dog's
  * own colour: a barking dog has to be findable at a glance on a trail that may otherwise
- * be the same hue (a red collar, for instance).
+ * be the same hue (a red collar, for instance). Deep red with a light casing underneath,
+ * because a mid-tone red on the terrain map vanished into the contour lines.
  */
-const BARK_TRACK_COLOR = '#dc2626';
+const BARK_TRACK_COLOR = '#991b1b';
+const BARK_TRACK_CASING_COLOR = '#fff7ed';
 
 interface MapContainerProps {
   mapLayer: MapLayerType;
@@ -635,11 +637,24 @@ export const MapContainer: React.FC<MapContainerProps> = ({
             ? Math.max(0.65, 0.95 - ageFraction * 0.3)
             : Math.max(0.5, 0.85 - ageFraction * 0.4);
 
+          // Light casing under the bark segments: the deep red alone still disappeared into
+          // the map's own line work when the trail ran along a path or a contour.
+          if (chunk.isBarking) {
+            L.polyline(chunk.coords, {
+              color: BARK_TRACK_CASING_COLOR,
+              weight: 8,
+              opacity: Math.min(0.85, opacity),
+              lineCap: 'round',
+              lineJoin: 'round',
+              interactive: false,
+            }).addTo(trackGroup!);
+          }
+
           const polyline = L.polyline(chunk.coords, {
             // Solid rather than dashed: the dashes turned into visual noise when zoomed in
             // close to a dog circling inside a small area.
             color: chunk.isBarking ? BARK_TRACK_COLOR : dog.color,
-            weight: chunk.isBarking ? 4 : 2,
+            weight: chunk.isBarking ? 5 : 2,
             opacity,
             lineCap: 'round',
             lineJoin: 'round',
@@ -680,8 +695,16 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       );
       const petEmoji = isCat ? '🐱' : '🐕';
 
+      // A manual bark is human-latched because the collar cannot report one, so it is shown
+      // on the marker itself - otherwise the only sign of it was a dog status in the list
+      // panel while the map looked untouched.
+      const manualBark = dog.manualBarkActive === true;
+      const speedKmh = Math.max(0, Number(dog.speed) || 0);
+
       let statusBadge = '';
-      if (dog.status === 'haukkuu') {
+      if (manualBark) {
+        statusBadge = `<span class="bg-red-700 text-white font-black px-1.5 py-0.2 text-[9px] rounded-full animate-pulse ml-0.5 shadow border border-red-300">🔊 ${escapeHtml(language === 'fi' ? 'HAUKKU' : 'BARK')}</span>`;
+      } else if (dog.status === 'haukkuu') {
         const holdTag = dog.barkHoldRemainingFixes && dog.barkHoldRemainingFixes > 0
           ? ` <span class="text-[8px] text-amber-200 font-normal">(${dog.barkHoldRemainingFixes}/3)</span>`
           : '';
@@ -693,13 +716,24 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const dogIconHtml = `
         <div class="relative flex flex-col items-center cursor-pointer group">
           <div class="flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-stone-900/95 text-white text-[11px] font-bold border ${
-            isSelected ? 'border-amber-400 ring-2 ring-amber-400' : 'border-stone-700'
+            manualBark
+              ? 'border-red-500 ring-2 ring-red-500/70'
+              : isSelected
+              ? 'border-amber-400 ring-2 ring-amber-400'
+              : 'border-stone-700'
           } shadow-lg whitespace-nowrap">
             <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${safeCssColor(dog.color)}"></span>
             <span class="font-extrabold">${escapeHtml(dog.name)}</span>
+            <span class="font-mono text-[9.5px] font-bold ${
+              speedKmh >= 1 ? 'text-sky-300' : 'text-stone-400'
+            }">${speedKmh.toFixed(speedKmh < 10 ? 1 : 0)} km/h</span>
             ${statusBadge}
           </div>
-          <div class="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-xl mt-0.5 border-2 border-white text-base" style="background-color: ${safeCssColor(dog.color)}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-base ${
+            manualBark
+              ? 'shadow-xl mt-0.5 border-2 border-red-500 ring-4 ring-red-500/50 animate-pulse'
+              : 'shadow-xl mt-0.5 border-2 border-white'
+          }" style="background-color: ${safeCssColor(dog.color)}">
             ${petEmoji}
           </div>
         </div>
@@ -744,6 +778,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               ? `🏃 Juoksee (${dog.speed} km/h)`
               : '⏸️ Paikallaan'
           }</b></div>
+          <div style="font-size:11px; color:#0284c7; font-weight:700;">🏃 Nopeus: ${speedKmh.toFixed(1)} km/h</div>
+          ${manualBark ? `<div style="font-size:12px; color:#991b1b; font-weight:800; margin-top:2px;">🔊 Haukku merkitty päälle${dog.manualBarkBy ? ` (${escapeHtml(dog.manualBarkBy)})` : ''}</div>` : ''}
           <div style="font-size:11px; color:#059669; font-weight:700; margin-top:3px;">⏱️ Päivitetty: ${timeAgoText}</div>
           <div style="font-size:11px; color:#666; margin-top:2px;">🔋 Akku: ${dog.battery}% • 📶 ${dog.signal}%</div>
         </div>
@@ -937,7 +973,10 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       const distToDog = calculateDistance(userLocation.lat, userLocation.lng, trackedDog.lat, trackedDog.lng);
       const distFormatted = formatDistance(distToDog);
       const arrowColor = safeCssColor(trackedDog.color || '#f59e0b');
-      const isBarking = trackedDog.status === 'haukkuu' || (trackedDog.barkRate && trackedDog.barkRate > 0);
+      const isBarking =
+        trackedDog.manualBarkActive === true ||
+        trackedDog.status === 'haukkuu' ||
+        (trackedDog.barkRate && trackedDog.barkRate > 0);
 
       // Icon size [110, 110], anchor at center [55, 55].
       // The arrow points in direction of bearing.
@@ -1579,8 +1618,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                     <span>{language === 'fi' ? 'Katkoviiva: Haku (max 12h)' : 'Dashed: Search trail (max 12h)'}</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <span className="inline-block w-4 h-1.5 bg-amber-400 rounded-full"></span>
-                    <span className="font-semibold text-amber-300">{language === 'fi' ? 'Paksu yhtenäinen: Ajojälki (haukku + liike)' : 'Solid bold: Chase track (bark + run)'}</span>
+                    <span className="inline-block w-4 h-1.5 rounded-full bg-red-900 ring-1 ring-orange-50"></span>
+                    <span className="font-semibold text-red-300">{language === 'fi' ? 'Paksu tummanpunainen: Haukkujälki' : 'Solid dark red: Bark track'}</span>
                   </div>
                 </div>
               )}
@@ -1774,16 +1813,25 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                         📍 {dist !== null ? formatDistance(dist) : '---'}
                       </span>
 
-                      {/* Speed / Barking / Standing Status */}
-                      {trackedDog.status === 'haukkuu' ? (
+                      {/* Barking / Standing Status, then speed on its own - the bark rate used
+                          to replace the speed, so a barking dog's speed was never visible. */}
+                      {trackedDog.manualBarkActive === true ? (
+                        <span className="text-red-400 font-black animate-pulse shrink-0">
+                          🔊 {language === 'fi' ? 'HAUKKU' : 'BARK'}
+                        </span>
+                      ) : trackedDog.status === 'haukkuu' ? (
                         <span className="text-red-400 font-black animate-pulse shrink-0">
                           🔊 {trackedDog.barkRate || 0} /min
                         </span>
                       ) : trackedDog.status === 'seisoo' ? (
                         <span className="text-amber-400 font-black shrink-0">🛑 Seisoo</span>
-                      ) : (
-                        <span className="text-sky-300 font-bold shrink-0">🏃 {trackedDog.speed} km/h</span>
-                      )}
+                      ) : null}
+
+                      <span className="text-sky-300 font-bold shrink-0">
+                        🏃 {(Math.max(0, Number(trackedDog.speed) || 0)).toFixed(
+                          Math.max(0, Number(trackedDog.speed) || 0) < 10 ? 1 : 0
+                        )} km/h
+                      </span>
 
                       {/* Battery */}
                       <span className="text-emerald-400 font-bold shrink-0">🔋 {trackedDog.battery}%</span>

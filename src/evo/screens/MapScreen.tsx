@@ -4,6 +4,11 @@ import { MapContainer } from '../../components/MapContainer';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } from '../core';
 
+const fmtSpeed = (value: number | undefined): string => {
+  const kmh = Math.max(0, Number(value) || 0);
+  return `${kmh.toFixed(kmh < 10 ? 1 : 0)} km/h`;
+};
+
 /**
  * The field view. The map itself is the real, shared <MapContainer> in its "evo"
  * variant — every collar position, track and ring the classic UI draws is drawn here
@@ -133,12 +138,14 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
                   <span className="min-w-0 flex-1 truncate text-[13px] font-extrabold">{tracked.name}</span>
                   {(() => {
                     const rel = relToUser(p.userLocation, tracked.lat, tracked.lng);
-                    const tone = tracked.status === 'haukkuu' ? 'var(--e-live)' : tracked.status === 'juoksee' || tracked.status === 'liikkeessä' ? 'var(--e-info)' : 'var(--e-text-2)';
+                    const live = tracked.manualBarkActive === true || tracked.status === 'haukkuu';
+                    const tone = live ? 'var(--e-live)' : tracked.status === 'juoksee' || tracked.status === 'liikkeessä' ? 'var(--e-info)' : 'var(--e-text-2)';
                     return (
                       <>
                         <span className="evo-mono flex-none text-[13px] font-bold" style={{ color: rel ? 'var(--e-signal)' : 'var(--e-text-3)' }}>{rel ? fmtDist(rel.dist) : '—'}</span>
                         {rel && <span className="flex-none text-[11px] font-bold" style={{ color: tracked.color }}>{rel.compass}</span>}
-                        <span className="flex-none text-[11px] font-extrabold" style={{ color: tone }}>{dogStatusLabel(tracked.status, s)}</span>
+                        <span className="flex-none text-[11px] font-extrabold" style={{ color: tone }}>{live ? `🔊 ${dogStatusLabel('haukkuu', s)}` : dogStatusLabel(tracked.status, s)}</span>
+                        <span className="evo-mono flex-none text-[10px] font-bold" style={{ color: 'var(--e-info)' }}>🏃 {fmtSpeed(tracked.speed)}</span>
                         <span className="flex-none text-[10px] font-bold" style={{ color: 'var(--e-text-3)' }}>{tracked.battery}%</span>
                       </>
                     );
@@ -210,8 +217,9 @@ const ToggleRow: React.FC<{ label: string; on: boolean; onToggle: () => void }> 
 const DogChip: React.FC<{ dog: Dog; p: EvoProps; selected: boolean }> = ({ dog, p, selected }) => {
   const { s } = useEvo();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
-  const tone = dog.status === 'haukkuu' ? 'var(--e-live)' : dog.status === 'juoksee' || dog.status === 'liikkeessä' ? 'var(--e-info)' : 'var(--e-text-2)';
-  const label = dogStatusLabel(dog.status, s);
+  const live = dog.manualBarkActive === true || dog.status === 'haukkuu';
+  const tone = live ? 'var(--e-live)' : dog.status === 'juoksee' || dog.status === 'liikkeessä' ? 'var(--e-info)' : 'var(--e-text-2)';
+  const label = live ? `🔊 ${dogStatusLabel('haukkuu', s)}` : dogStatusLabel(dog.status, s);
 
   return (
     <button
@@ -232,7 +240,9 @@ const DogChip: React.FC<{ dog: Dog; p: EvoProps; selected: boolean }> = ({ dog, 
         {rel && <span className="ml-auto text-[11px] font-bold" style={{ color: dog.color }}>{rel.compass}</span>}
       </span>
       <span className="mt-1 flex items-center gap-1 text-[10.5px] font-extrabold" style={{ color: tone }}>
-        <PawPrint className="h-3 w-3" /> {label}
+        <PawPrint className="h-3 w-3 flex-none" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="evo-mono flex-none text-[9.5px] font-bold" style={{ color: 'var(--e-info)' }}>{fmtSpeed(dog.speed)}</span>
       </span>
     </button>
   );
