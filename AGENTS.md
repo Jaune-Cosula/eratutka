@@ -34,7 +34,7 @@ Tämä tiedosto sisältää Erätutka-sovelluksen arkkitehtuuriohjeet, kriittise
   - `build`: `vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs`
   - `start`: `node dist/server.cjs`
 * Portti on aina `3000` (`0.0.0.0`).
-* **Versiopäivitys on manuaalinen rituaali.** `VersionUpdateChecker` tarjoaa päivitystä vain kun palvelimen `ERATUTKA_VERSION` (`server.ts`) eroaa siitä versiosta, jonka sivu näki latautuessaan. Pelkkä palvelimen uudelleenkäynnistys **ei** enää laukaise päivitystä, joten **versio on nostettava jokaisessa julkaisussa**, jossa asiakkaiden halutaan lataavan sivu uudelleen. Pidä se samassa tahdissa `index.html`-tiedoston `<title>`-otsikon kanssa.
+* **Versiopäivitys on manuaalinen rituaali.** `VersionUpdateChecker` tarjoaa päivitystä vain kun palvelimen `ERATUTKA_VERSION` (`server.ts`) eroaa siitä versiosta, jonka sivu näki latautuessaan. Pelkkä palvelimen uudelleenkäynnistys **ei** enää laukaise päivitystä, joten **versio on nostettava jokaisessa julkaisussa**, jossa asiakkaiden halutaan lataavan sivu uudelleen. Pidä se samassa tahdissa `index.html`-tiedoston `<title>`-otsikon kanssa. **Nostoaika on viimeistään push-vaiheessa**: jos muutoksia pushataan nostamatta versiota, siitä on sanottava ääneen, jotta julkaisu ei jää ilman päivitysbanneria.
 * **Uudelleenlatausta ei koskaan pakoteta.** Päivitys näytetään suljettavana bannerina ilman lähtölaskentaa, koska automaattinen uudelleenlataus tuhoaa kesken jahdin tallentamattoman tilan (mittarin mittaukset, kesken oleva merkintä, avoinna oleva dialogi). Älä palauta countdownia.
 
 ### 5. Jahtisession pääsynvalvonta (`huntKey`)

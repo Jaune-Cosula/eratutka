@@ -2899,7 +2899,7 @@ app.get('/api/session/:code/relay', (req, res) => {
  * bumped for every deploy that should prompt users to reload. Keep it in step with the
  * `<title>` in index.html so the UI and the API do not disagree.
  */
-const ERATUTKA_VERSION = '2.7.21';
+const ERATUTKA_VERSION = '2.7.22';
 const SERVER_BOOT_TIME = Date.now();
 
 app.get('/api/app-version', (req, res) => {
