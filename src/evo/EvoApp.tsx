@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Map as MapIcon, PawPrint, Users, MapPin, User, ChevronDown } from 'lucide-react';
 import './evo.css';
 import { EvoProps, EvoNav, useEvo, Sheet } from './core';
@@ -23,7 +23,43 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
   const { s } = useEvo();
   const [tab, setTab] = useState<EvoTab>('map');
   const [hubOpen, setHubOpen] = useState(false);
-  const nav: EvoNav = { goMap: () => setTab('map'), openHub: () => setHubOpen(true) };
+  const [immersive, setImmersive] = useState(false);
+
+  // Fullscreen where the browser supports it (Android Chrome, desktop) and an app-only
+  // immersive layout where it does not (iPhone Safari has no page fullscreen): the map then
+  // still loses the situation bar and the tab bar. Both hide the same two bars.
+  const toggleImmersive = useCallback(() => {
+    if (document.fullscreenElement) {
+      (document.exitFullscreen?.() ?? Promise.resolve())
+        .catch(() => {})
+        .finally(() => setImmersive(false));
+      return;
+    }
+    if (typeof document.documentElement.requestFullscreen === 'function') {
+      document.documentElement
+        .requestFullscreen()
+        .then(() => setImmersive(true))
+        .catch(() => setImmersive((v) => !v));
+      return;
+    }
+    setImmersive((v) => !v);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setImmersive(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    };
+  }, []);
+
+  const nav: EvoNav = {
+    goMap: () => setTab('map'),
+    openHub: () => setHubOpen(true),
+    immersive,
+    toggleImmersive,
+  };
 
   const active = Boolean(p.currentSession);
   const code = p.currentSession?.code || s.noHunt;
@@ -33,26 +69,28 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
     <div className={'evo-root' + (p.isDarkMode ? '' : ' evo-light') + ' relative flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden'}>
       <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden">
         {/* Situation bar */}
-        <button
-          onClick={() => setHubOpen(true)}
-          className="flex flex-none items-center gap-2.5 border-b px-3.5 pb-3 pt-3 text-left"
-          style={{ borderColor: 'var(--e-border-soft)', background: 'linear-gradient(180deg, rgba(var(--e-veil),.96), rgba(var(--e-veil),.7))' }}
-        >
-          <span className={active ? 'evo-livedot' : 'evo-livedot off'} />
-          <span className="min-w-0 flex-1">
-            <span className="evo-mono flex items-center gap-2 text-[15px] font-bold tracking-wide" style={{ color: active ? 'var(--e-signal)' : 'var(--e-text-2)' }}>
-              {code}
+        {!immersive && (
+          <button
+            onClick={() => setHubOpen(true)}
+            className="flex flex-none items-center gap-2.5 border-b px-3.5 pb-3 pt-3 text-left"
+            style={{ borderColor: 'var(--e-border-soft)', background: 'linear-gradient(180deg, rgba(var(--e-veil),.96), rgba(var(--e-veil),.7))' }}
+          >
+            <span className={active ? 'evo-livedot' : 'evo-livedot off'} />
+            <span className="min-w-0 flex-1">
+              <span className="evo-mono flex items-center gap-2 text-[15px] font-bold tracking-wide" style={{ color: active ? 'var(--e-signal)' : 'var(--e-text-2)' }}>
+                {code}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--e-text-2)' }}>{name}</span>
             </span>
-            <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--e-text-2)' }}>{name}</span>
-          </span>
-          {active && (
-            <span className="flex flex-none items-center gap-3 text-[12px] font-bold" style={{ color: 'var(--e-text-2)' }}>
-              <span className="flex items-center gap-1.5"><Users className="h-4 w-4" style={{ color: 'var(--e-info)' }} />{p.team.length}</span>
-              <span className="flex items-center gap-1.5"><PawPrint className="h-4 w-4" style={{ color: 'var(--e-signal)' }} />{p.visibleDogs.length}</span>
-            </span>
-          )}
-          <ChevronDown className="h-4 w-4 flex-none" style={{ color: 'var(--e-text-3)' }} />
-        </button>
+            {active && (
+              <span className="flex flex-none items-center gap-3 text-[12px] font-bold" style={{ color: 'var(--e-text-2)' }}>
+                <span className="flex items-center gap-1.5"><Users className="h-4 w-4" style={{ color: 'var(--e-info)' }} />{p.team.length}</span>
+                <span className="flex items-center gap-1.5"><PawPrint className="h-4 w-4" style={{ color: 'var(--e-signal)' }} />{p.visibleDogs.length}</span>
+              </span>
+            )}
+            <ChevronDown className="h-4 w-4 flex-none" style={{ color: 'var(--e-text-3)' }} />
+          </button>
+        )}
 
         {/* Viewport */}
         <div className="relative flex-1 overflow-hidden">
@@ -64,7 +102,7 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
         </div>
 
         {/* Bottom navigation */}
-        <nav className="evo-nav flex-none">
+        {!immersive && <nav className="evo-nav flex-none">
           {([
             ['map', <MapIcon className="h-[22px] w-[22px]" key="i" />, s.map],
             ['dogs', <PawPrint className="h-[22px] w-[22px]" key="i" />, s.dogs],
@@ -82,7 +120,7 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
               )}
             </button>
           ))}
-        </nav>
+        </nav>}
 
         {hubOpen && (
           <Sheet title={s.currentHunt} onClose={() => setHubOpen(false)}>

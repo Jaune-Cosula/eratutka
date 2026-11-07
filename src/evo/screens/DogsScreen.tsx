@@ -10,6 +10,7 @@ import { CollarSyncModal } from '../../components/CollarSyncModal';
 import { useManualCollarSync } from '../../hooks/useManualCollarSync';
 import { colorsUsedByOthers } from '../../data/dogColors';
 import { calculateTotalBarkMs, formatBarkDuration } from '../../utils/geoUtils';
+import { useNow } from '../../hooks/useNow';
 
 const toneColor = (t: string) => (t === 'live' ? 'var(--e-live)' : t === 'info' ? 'var(--e-info)' : t === 'alert' ? 'var(--e-alert)' : 'var(--e-text-2)');
 
@@ -19,6 +20,8 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
   // The collar's Gateway/Tractive sync modal is a viewport-level overlay, so it is rendered
   // as a sibling of the detail Sheet rather than inside it.
   const [syncDog, setSyncDog] = useState<Dog | null>(null);
+  // Keeps an open manual-bark bout ticking even when the collar sends no new fix.
+  const now = useNow();
 
   return (
     <section className="absolute inset-0 overflow-y-auto pb-6">
@@ -62,7 +65,7 @@ export const DogsScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) =
                   <span className="flex items-center gap-1" style={{ color: 'var(--e-text-2)' }}><Signal className="h-3 w-3" />{dog.signal}%</span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2.5 text-[10.5px] font-bold" style={{ color: 'var(--e-text-3)' }}>
-                  <span>🔊 {s.totalBarked}: {formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</span>
+                  <span>🔊 {s.totalBarked}: {formatBarkDuration(calculateTotalBarkMs(dog.trackHistory, dog.manualBarkBouts, now))}</span>
                   {dog.lastBarkTimestamp ? <span>· {s.lastBark} {timeAgo(dog.lastBarkTimestamp, lang)}</span> : null}
                 </div>
               </div>
@@ -136,6 +139,8 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
   // The Sheet captures `dog` when opened; look up the live copy so the manual-bark toggle
   // reflects state changes made here or by other clients.
   const liveDog = p.dogs.find((d) => d.id === dog.id) || dog;
+  // Keeps an open manual-bark bout ticking even when the collar sends no new fix.
+  const now = useNow();
   const rel = relToUser(p.userLocation, dog.lat, dog.lng);
   const hidden = p.hiddenDogIds.includes(dog.id);
   // Only the collar's own device or the hunt master may remove it or drive its settings;
@@ -159,7 +164,7 @@ const DogDetail: React.FC<{ dog: Dog; p: EvoProps; nav: EvoNav; onClose: () => v
       <CollarTelemetryGauges dog={dog} userLocation={p.userLocation} onUpdateDogTelemetry={p.onUpdateDogTelemetry} />
 
       <div className="evo-card flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12px]">
-        <span style={{ color: 'var(--e-text-2)' }}>🔊 {s.totalBarked}: <b style={{ color: 'var(--e-text)' }}>{formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</b></span>
+        <span style={{ color: 'var(--e-text-2)' }}>🔊 {s.totalBarked}: <b style={{ color: 'var(--e-text)' }}>{formatBarkDuration(calculateTotalBarkMs(liveDog.trackHistory, liveDog.manualBarkBouts, now))}</b></span>
         {dog.lastBarkTimestamp ? <span style={{ color: 'var(--e-text-3)' }}>{s.lastBark}: {timeAgo(dog.lastBarkTimestamp, lang)}</span> : null}
       </div>
 

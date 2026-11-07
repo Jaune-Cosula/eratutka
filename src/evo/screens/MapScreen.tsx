@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, Radar, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown, Navigation, Eye, X } from 'lucide-react';
+import { Layers, Maximize, Minimize, Crosshair, TriangleAlert, Plus, Ruler, PawPrint, ChevronUp, ChevronDown, Navigation, Eye, X } from 'lucide-react';
 import { MapContainer } from '../../components/MapContainer';
 import { Dog } from '../../types';
 import { EvoProps, EvoNav, useEvo, relToUser, fmtDist, dogStatusLabel, Sheet } from '../core';
@@ -17,9 +17,8 @@ const fmtSpeed = (value: number | undefined): string => {
  * The bottom is kept deliberately thin: a single line for the collar being watched,
  * with the full collar list one tap away. Most of the screen stays map.
  */
-export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
+export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p, nav }) => {
   const { s } = useEvo();
-  const [radarOn, setRadarOn] = useState(false);
   const [ruler, setRuler] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [layerSheet, setLayerSheet] = useState(false);
@@ -82,15 +81,19 @@ export const MapScreen: React.FC<{ p: EvoProps; nav: EvoNav }> = ({ p }) => {
         {/* Tools */}
         <div className="pointer-events-auto absolute right-3 top-3 flex flex-col gap-2">
           <button className="evo-iconbtn" onClick={() => setLayerSheet(true)} title={s.layers}><Layers className="h-[19px] w-[19px]" /></button>
-          <button className={'evo-iconbtn' + (radarOn ? ' on' : '')} onClick={() => setRadarOn((v) => !v)} title={s.radar}><Radar className="h-[19px] w-[19px]" /></button>
+          <button
+            className={'evo-iconbtn' + (nav.immersive ? ' on' : '')}
+            onClick={nav.toggleImmersive}
+            title={nav.immersive ? s.exitFullscreen : s.fullscreen}
+          >
+            {nav.immersive ? <Minimize className="h-[19px] w-[19px]" /> : <Maximize className="h-[19px] w-[19px]" />}
+          </button>
           <button className={'evo-iconbtn' + (ruler ? ' on' : '')} onClick={() => setRuler((v) => !v)} title={s.distance}><Ruler className="h-[19px] w-[19px]" /></button>
           <button className={'evo-iconbtn' + (p.isGpsTracking ? ' on' : '')} onClick={p.toggleGps} title={s.gps}><Navigation className="h-[19px] w-[19px]" /></button>
           <button className="evo-iconbtn" onClick={() => setViewSheet(true)} title={s.visibility}><Eye className="h-[19px] w-[19px]" /></button>
           <button className="evo-iconbtn" onClick={recenter} title={s.recenter}><Crosshair className="h-[19px] w-[19px]" /></button>
           <button className="evo-iconbtn" onClick={p.openSos} title={s.sos} style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,.4)' }}><TriangleAlert className="h-[19px] w-[19px]" /></button>
         </div>
-
-        {radarOn && <RadarOverlay p={p} />}
 
         {/* Bottom: thin tracked-collar line, full list on demand */}
         <div
@@ -245,39 +248,5 @@ const DogChip: React.FC<{ dog: Dog; p: EvoProps; selected: boolean }> = ({ dog, 
         <span className="evo-mono flex-none text-[9.5px] font-bold" style={{ color: 'var(--e-info)' }}>{fmtSpeed(dog.speed)}</span>
       </span>
     </button>
-  );
-};
-
-/* --------------------------------------------------------------------- radar */
-
-const RadarOverlay: React.FC<{ p: EvoProps }> = ({ p }) => {
-  const { s } = useEvo();
-  const RANGE = 900;
-  return (
-    <div className="pointer-events-none absolute bottom-[64px] right-3 h-[168px] w-[168px]">
-      <div className="evo-radar absolute inset-0">
-        <span className="ring" style={{ width: '100%', height: '100%' }} />
-        <span className="ring" style={{ width: '66%', height: '66%' }} />
-        <span className="ring" style={{ width: '33%', height: '33%' }} />
-        <span className="sweep" />
-        {p.visibleDogs.map((dog) => {
-          const rel = relToUser(p.userLocation, dog.lat, dog.lng);
-          if (!rel) return null;
-          const pct = Math.min(1, rel.dist / RANGE);
-          const a = ((rel.bearing - 90) * Math.PI) / 180;
-          return (
-            <span
-              key={dog.id}
-              className="blip"
-              style={{ left: (50 + pct * 44 * Math.cos(a)) + '%', top: (50 + pct * 44 * Math.sin(a)) + '%', background: dog.color, color: dog.color }}
-            />
-          );
-        })}
-        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: 'var(--e-signal)', boxShadow: '0 0 10px var(--e-signal)' }} />
-      </div>
-      <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9.5px] font-extrabold uppercase tracking-widest" style={{ color: 'var(--e-live)' }}>
-        {s.radarRange}
-      </span>
-    </div>
   );
 };

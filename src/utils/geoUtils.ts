@@ -286,21 +286,59 @@ export const RING_RADII = [50, 100, 150, 500, 1000, 2000];
 export const RING_LIMIT_M = 150;
 
 /**
- * Rough total time (ms) the collar has been barking, from the retained track: each gap whose
- * starting point was a bark (barkRate > 0) is counted, capped so a long gap between two fixes
- * is never counted whole. Trials count barked minutes, so this gives an in-app estimate.
+ * Rough total time (ms) the dog has been barking, from two sources the app keeps: the collar's
+ * retained track (each gap whose starting point was a bark, capped so a long gap between two
+ * fixes is never counted whole) and the manual bark bouts any participant latched. Trials count
+ * barked minutes, so this gives an in-app estimate.
+ *
+ * The intervals are merged before summing so the two sources never count the same moment twice,
+ * and both are clamped to the same track-history window. An open bout (no `end` yet) is counted
+ * up to `now`, which is why callers re-render while it is latched on.
  */
-export function calculateTotalBarkMs(history?: DogTrackPoint[]): number {
-  if (!Array.isArray(history) || history.length < 2) return 0;
-  let ms = 0;
-  for (let i = 0; i < history.length - 1; i++) {
-    const a = history[i];
-    const b = history[i + 1];
-    if ((a.barkRate || 0) > 0) {
-      const dt = b.timestamp - a.timestamp;
-      if (dt > 0) ms += Math.min(dt, 120000);
+export function calculateTotalBarkMs(
+  history?: DogTrackPoint[],
+  bouts?: Array<{ start: number; end?: number }>,
+  now: number = Date.now()
+): number {
+  const windowStart = now - DOG_TRACK_MAX_AGE_MS;
+  const intervals: Array<[number, number]> = [];
+
+  const addInterval = (start: number, end: number) => {
+    const from = Math.max(start, windowStart);
+    const to = Math.min(end, now);
+    if (to > from) intervals.push([from, to]);
+  };
+
+  if (Array.isArray(history)) {
+    for (let i = 0; i < history.length - 1; i++) {
+      const a = history[i];
+      const b = history[i + 1];
+      if ((a.barkRate || 0) > 0) {
+        const dt = b.timestamp - a.timestamp;
+        if (dt > 0) addInterval(a.timestamp, a.timestamp + Math.min(dt, 120000));
+      }
     }
   }
+
+  for (const bout of bouts || []) {
+    if (!Number.isFinite(bout.start)) continue;
+    addInterval(bout.start, bout.end == null ? now : bout.end);
+  }
+
+  intervals.sort((x, y) => x[0] - y[0]);
+  let ms = 0;
+  let curStart = -Infinity;
+  let curEnd = -Infinity;
+  for (const [start, end] of intervals) {
+    if (start > curEnd) {
+      if (curEnd > curStart) ms += curEnd - curStart;
+      curStart = start;
+      curEnd = end;
+    } else if (end > curEnd) {
+      curEnd = end;
+    }
+  }
+  if (curEnd > curStart) ms += curEnd - curStart;
   return ms;
 }
 
@@ -736,6 +774,49 @@ export function stripDangerousKeys<T>(value: T): T {
   return value;
 }
 
+/**
+ * Carries the manual bark marker over from the fresher copy after a telemetry update. The poll
+ * cycle works from a snapshot taken at its start, so a toggle performed while the fetch was in
+ * flight would otherwise be overwritten by the pre-toggle copy and the marker would bounce back.
+ * `manualBarkAt` is stamped on every toggle - on and off - so it orders the two events.
+ */
+export function preferNewerManualBark(target: Dog, source: Dog): Dog {
+  if ((source.manualBarkAt ?? 0) > (target.manualBarkAt ?? 0)) {
+    return {
+      ...target,
+      manualBarkActive: source.manualBarkActive,
+      manualBarkBy: source.manualBarkBy,
+      manualBarkAt: source.manualBarkAt,
+      manualBarkBouts: source.manualBarkBouts ?? target.manualBarkBouts,
+    };
+  }
+  return target;
+}
+
+/**
+ * Union of two clients' manual bark bouts, since the bark total is derived from these intervals
+ * and a bout only one side saw would otherwise be lost on merge. Same `start` is the same bout;
+ * keep the copy that ends later (a closed bout beats a still-open one). Closed bouts older than
+ * the track-history window are dropped so the array cannot grow forever.
+ */
+function mergeManualBarkBouts(
+  a?: Array<{ start: number; end?: number }>,
+  b?: Array<{ start: number; end?: number }>
+): Array<{ start: number; end?: number }> | undefined {
+  const cutoff = Date.now() - DOG_TRACK_MAX_AGE_MS;
+  const map = new Map<number, { start: number; end?: number }>();
+  for (const bout of [...(a || []), ...(b || [])]) {
+    if (!Number.isFinite(bout.start)) continue;
+    if (bout.end != null && bout.end < cutoff) continue;
+    const existing = map.get(bout.start);
+    if (!existing || (bout.end ?? -Infinity) > (existing.end ?? -Infinity)) {
+      map.set(bout.start, bout);
+    }
+  }
+  if (map.size === 0) return undefined;
+  return Array.from(map.values()).sort((x, y) => x.start - y.start);
+}
+
 export function mergeDogLists(
   localDogs: Dog[],
   incomingDogs: Dog[],
@@ -830,6 +911,9 @@ export function mergeDogLists(
       Array.from(histMap.values()).sort((a, b) => a.timestamp - b.timestamp)
     ).slice(-5000);
 
+    // Bouts from both sides survive the merge; only the marker state itself follows the freshest.
+    const mergedBouts = mergeManualBarkBouts(primary.manualBarkBouts, secondary.manualBarkBouts);
+
     const mergedDog: Dog = {
       ...secondary,
       ...primary,
@@ -872,14 +956,13 @@ export function mergeDogLists(
             manualBarkActive: primary.manualBarkActive,
             manualBarkBy: primary.manualBarkBy,
             manualBarkAt: primary.manualBarkAt,
-            manualBarkBouts: primary.manualBarkBouts,
           }
         : {
             manualBarkActive: secondary.manualBarkActive,
             manualBarkBy: secondary.manualBarkBy,
             manualBarkAt: secondary.manualBarkAt,
-            manualBarkBouts: secondary.manualBarkBouts,
           }),
+      ...(mergedBouts ? { manualBarkBouts: mergedBouts } : {}),
     };
 
     mergedMap.set(existing.id, mergedDog);

@@ -32,7 +32,7 @@ export const fi = {
   importData: 'Tuo karttadata', exportGpx: 'Vie GPX',
   cancel: 'Peruuta', save: 'Tallenna', remove: 'Poista', close: 'Sulje',
 
-  buildingLimit: '150 m rakennusraja', radar: 'Tutka', radarRange: 'Tutka · 900 m',
+  buildingLimit: '150 m rakennusraja', fullscreen: 'Koko näyttö', exitFullscreen: 'Poistu koko näytöstä',
   layers: 'Karttatasot', recenter: 'Keskitä', gps: 'GPS-seuranta',
   layerTerrain: 'Maasto', layerAerial: 'Ilmakuva', layerBase: 'Peruskartta', layerOpenTopo: 'OpenTopo',
 
@@ -83,7 +83,7 @@ export const en: EvoStrings = {
   importData: 'Import map data', exportGpx: 'Export GPX',
   cancel: 'Cancel', save: 'Save', remove: 'Remove', close: 'Close',
 
-  buildingLimit: '150 m building limit', radar: 'Radar', radarRange: 'Radar · 900 m',
+  buildingLimit: '150 m building limit', fullscreen: 'Fullscreen', exitFullscreen: 'Exit fullscreen',
   layers: 'Map layers', recenter: 'Recenter', gps: 'GPS tracking',
   layerTerrain: 'Terrain', layerAerial: 'Aerial', layerBase: 'Base map', layerOpenTopo: 'OpenTopo',
 
@@ -267,6 +267,9 @@ export const Sheet: React.FC<{ title: string; onClose: () => void; children: Rea
 export interface EvoNav {
   goMap: () => void;
   openHub: () => void;
+  /** Fullscreen / immersive map mode: the shell hides its situation bar and tab bar. */
+  immersive: boolean;
+  toggleImmersive: () => void;
 }
 
 

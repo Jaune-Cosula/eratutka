@@ -36,7 +36,7 @@ export interface Dog {
   // "ajojälki" (the dog's track while the bark was marked).
   manualBarkActive?: boolean;
   manualBarkBy?: string;
-  manualBarkAt?: number;
+  manualBarkAt?: number; // When the marker was last toggled, on or off (orders stale copies)
   manualBarkBouts?: Array<{ start: number; end?: number }>;
   trackerModel?: string; // e.g. "SinoTrack ST-904L", "Tracker Artemi", "Icarii IK122 4G / IK122T Pro", etc.
   imei?: string; // 15-digit IMEI for SinoTrack / 4G tracker

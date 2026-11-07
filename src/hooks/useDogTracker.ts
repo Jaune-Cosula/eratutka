@@ -11,6 +11,7 @@ import {
   isDogDeleted,
   addPendingDeletedIds,
   clearPendingDeletedIds,
+  preferNewerManualBark,
 } from '../utils/geoUtils';
 import { playBarkSpikeAlert } from '../utils/audioAlerts';
 import { saveSessionDogs, saveSessionDogsTelemetry, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders, getActiveUid } from '../services/userService';
@@ -278,7 +279,9 @@ export function useDogTracker({
               const histData = await fetchDeviceHistory(
                 cleanId,
                 gwUrl,
-                isFullCatchUp ? { hours: 12, limit: 5000 } : { since: Math.max(0, latestTs - 5000), limit: 500 }
+                // A resumed app can be missing hours of low-frequency points, so the incremental
+                // request asks for the same 5 000-point cap as the full catch-up.
+                isFullCatchUp ? { hours: 12, limit: 5000 } : { since: Math.max(0, latestTs - 5000), limit: 5000 }
               );
 
               if (histData && histData.success && Array.isArray(histData.points) && histData.points.length > 0) {
@@ -424,7 +427,12 @@ export function useDogTracker({
         // Crucial: merge against LATEST dogsRef.current and filter using isDogDeleted to prevent resurrecting deleted dogs
         const updatedMap = new Map(currentList.map((d) => [d.id, d]));
         const latestSurvivingDogs = dogsRef.current.filter((d) => d && d.id && !isDogDeleted(d));
-        const finalList = latestSurvivingDogs.map((d) => updatedMap.get(d.id) || d);
+        // The telemetry copy comes from the snapshot taken at the start of the cycle. If a manual
+        // bark toggle happened while a fetch was in flight, its state is newer than that snapshot.
+        const finalList = latestSurvivingDogs.map((d) => {
+          const updated = updatedMap.get(d.id);
+          return updated ? preferNewerManualBark(updated, d) : d;
+        });
 
         dogsRef.current = finalList;
         setDogs([...finalList]);
@@ -796,9 +804,10 @@ export function useDogTracker({
     const updatedList = dogsRef.current.map((d) => {
       if (d.id !== dogId) return d;
       if (d.manualBarkActive) {
-        // Turn off: close any still-open bout.
+        // Turn off: close any still-open bout. `manualBarkAt` is stamped here too, so a merge
+        // can tell this "off" is newer than a stale copy that still says "on".
         const bouts = (d.manualBarkBouts || []).map((b) => (b.end == null ? { ...b, end: now } : b));
-        return { ...d, manualBarkActive: false, manualBarkBouts: bouts, lastUpdated: now };
+        return { ...d, manualBarkActive: false, manualBarkAt: now, manualBarkBouts: bouts, lastUpdated: now };
       }
       // Turn on: start a new bout.
       const bouts = [...(d.manualBarkBouts || []), { start: now }];

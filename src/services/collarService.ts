@@ -210,12 +210,18 @@ export async function fetchDeviceHistory(
   }
 
   const gwUrl = gatewayUrl || 'http://35.206.111.214:8080/api/positions';
-  let histUrl = `/api/gps/history/${encodeURIComponent(trimmedId)}`;
+  const params = new URLSearchParams();
   if (options.since !== undefined) {
-    histUrl += `&since=${options.since}&limit=${options.limit || 500}`;
+    params.set('since', String(options.since));
+    params.set('limit', String(options.limit || 500));
   } else {
-    histUrl += `&hours=${options.hours || 12}&limit=${options.limit || 5000}`;
+    params.set('hours', String(options.hours || 12));
+    params.set('limit', String(options.limit || 5000));
   }
+  // Without a gatewayUrl the route only reads this server's in-memory history store, which is
+  // empty after a restart and never holds positions the collar sent straight to the gateway.
+  params.set('gatewayUrl', gwUrl);
+  const histUrl = `/api/gps/history/${encodeURIComponent(trimmedId)}?${params.toString()}`;
 
   try {
     const resp = await fetch(histUrl, { headers: relayAuthHeaders() });

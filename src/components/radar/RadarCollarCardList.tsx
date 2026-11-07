@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Dog, UserLocation } from '../../types';
 import { calculateDistance, calculateBearing, formatDistance, calculateTotalBarkMs, formatBarkDuration } from '../../utils/geoUtils';
+import { useNow } from '../../hooks/useNow';
 import { Compass, Battery, Clock, User, Trash2 } from 'lucide-react';
 import { formatTimeAgo } from '../DogRadarPanel';
 
@@ -41,6 +42,9 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
   onShareLibraryDog,
   onToggleManualBark,
 }) => {
+  // Keeps an open manual-bark bout ticking even when the collar sends no new fix.
+  const now = useNow();
+
   const sortedDogs = useMemo(() => {
     if (!selectedDogId) return dogs;
     return [...dogs].sort((a, b) => {
@@ -230,8 +234,8 @@ export const RadarCollarCardList: React.FC<RadarCollarCardListProps> = ({
                         time for the hunt plus when the dog last barked, even if that was
                         minutes ago while the phone was in a pocket. */}
                     <span className="text-[10px] font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5 text-stone-400">
-                      <span title="Arvio haukutusta ajasta (kulkuhistoriasta)">
-                        🔊 Haukuttu: <strong className={dog.status === 'haukkuu' ? 'text-red-400' : 'text-amber-300'}>{formatBarkDuration(calculateTotalBarkMs(dog.trackHistory))}</strong>
+                      <span title="Arvio haukutusta ajasta (kulkuhistoria ja merkityt haukut)">
+                        🔊 Haukuttu: <strong className={dog.status === 'haukkuu' ? 'text-red-400' : 'text-amber-300'}>{formatBarkDuration(calculateTotalBarkMs(dog.trackHistory, dog.manualBarkBouts, now))}</strong>
                       </span>
                       {dog.lastBarkTimestamp ? (
                         <span
