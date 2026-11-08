@@ -162,6 +162,11 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const [mmlSource, setMmlSource] = useSyncedSetting('mmlSource');
   const [showMmlKeyModal, setShowMmlKeyModal] = useState<boolean>(false);
   const [mmlTileError, setMmlTileError] = useState<boolean>(false);
+  // Consecutive base-map tile failures. A single missing edge tile or a transient network
+  // error must not claim the user's key is broken, so the warning waits for a streak and a
+  // successful tile clears it. The optional property-boundary layer is deliberately excluded:
+  // a key can cover the base maps without covering that layer.
+  const mmlTileErrorStreakRef = useRef(0);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -302,12 +307,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           zIndex: 2,
         });
 
-        propLayer.on('tileerror', () => {
-          if (mmlSource === 'custom') {
-            setMmlTileError(true);
-          }
-        });
-
         propLayer.addTo(mapRef.current);
         propertyLayerRef.current = propLayer;
       } else {
@@ -368,6 +367,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
       if (useCustomKey) {
         setMmlTileError(false);
+        mmlTileErrorStreakRef.current = 0;
         const subType = mapLayer === 'mml_maasto' ? 'maastokartta' : 'taustakartta';
         const url = `https://avoin-karttakuva.maanmittauslaitos.fi/avoin/wmts/1.0.0/${subType}/default/WGS84_Pseudo-Mercator/{z}/{y}/{x}.png?api-key=${mmlApiKey.trim()}`;
         const attribution = '&copy; Maanmittauslaitos (MML) Avoin maastokartta (Oma avain)';
@@ -380,15 +380,20 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         });
 
         layer.on('tileerror', () => {
-          if (mmlSource === 'custom') {
-            setMmlTileError(true);
-          }
+          if (mmlSource !== 'custom') return;
+          mmlTileErrorStreakRef.current += 1;
+          if (mmlTileErrorStreakRef.current >= 5) setMmlTileError(true);
+        });
+        layer.on('tileload', () => {
+          mmlTileErrorStreakRef.current = 0;
+          setMmlTileError(false);
         });
 
         tileLayer = layer;
       } else {
         // DEFAULT: Kapsi MML WMS Map service (no key needed!)
         setMmlTileError(false);
+        mmlTileErrorStreakRef.current = 0;
         const layerName = mapLayer === 'mml_maasto' ? 'peruskartta' : 'taustakartta';
         const attribution = mapLayer === 'mml_maasto'
           ? '🌲 Maanmittauslaitos Peruskartta (Kapsi.fi)'

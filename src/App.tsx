@@ -414,6 +414,14 @@ export default function App() {
   // picking a default dog to track.
   const visibleDogs = dogs.filter((d) => !hiddenDogIds.includes(d.id));
 
+  // The bottom nav's map tab doubles as "zoom to the tracked dog" in the classic UI too.
+  const handleMobileTabChange = (tab: 'map' | 'radar' | 'team' | 'annotations' | 'ruler') => {
+    setActiveTab(tab);
+    if (tab !== 'map') return;
+    const dog = visibleDogs.find((d) => d.id === selectedDogId) || visibleDogs[0];
+    if (dog && dog.lat && dog.lng) setMapFocusTarget({ lat: dog.lat, lng: dog.lng });
+  };
+
   // Collar library: the hunter's own dogs that are NOT in the current hunt. They are
   // deliberately not part of the session, so nothing about them is transmitted and nobody
   // else can see them - which is what keeps collars that stayed home from being broadcast.
@@ -1391,7 +1399,7 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar (classic UI only) */}
       <MobileBottomNav
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleMobileTabChange}
         activeDogCount={visibleDogs.filter((d) => d.isActive).length}
         teamCount={team.length}
         unreadRadioCount={unreadRadioCount}

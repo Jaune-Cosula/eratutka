@@ -54,6 +54,15 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
     };
   }, []);
 
+  // The bottom bar's map tab is also a "where is my dog" button: it zooms to the collar being
+  // tracked (the selected one, else the first visible). Screens that already know their dog
+  // keep using `nav.goMap` with their own focus target.
+  const goMapToTracked = useCallback(() => {
+    setTab('map');
+    const dog = p.visibleDogs.find((d) => d.id === p.selectedDogId) || p.visibleDogs[0];
+    if (dog && dog.lat && dog.lng) p.setMapFocusTarget({ lat: dog.lat, lng: dog.lng });
+  }, [p.visibleDogs, p.selectedDogId, p.setMapFocusTarget]);
+
   const nav: EvoNav = {
     goMap: () => setTab('map'),
     openHub: () => setHubOpen(true),
@@ -110,7 +119,7 @@ export const EvoApp: React.FC<{ p: EvoProps }> = ({ p }) => {
             ['marks', <MapPin className="h-[22px] w-[22px]" key="i" />, s.marks],
             ['account', <User className="h-[22px] w-[22px]" key="i" />, s.account],
           ] as [EvoTab, React.ReactNode, string][]).map(([key, icon, label]) => (
-            <button key={key} className={tab === key ? 'on' : ''} onClick={() => setTab(key)}>
+            <button key={key} className={tab === key ? 'on' : ''} onClick={() => (key === 'map' ? goMapToTracked() : setTab(key))}>
               {icon}
               <span className="evo-navlabel">{label}</span>
               {key === 'team' && p.unreadRadioCount > 0 && (
