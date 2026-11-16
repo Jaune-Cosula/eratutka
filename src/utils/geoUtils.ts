@@ -781,16 +781,17 @@ export function stripDangerousKeys<T>(value: T): T {
  * `manualBarkAt` is stamped on every toggle - on and off - so it orders the two events.
  */
 export function preferNewerManualBark(target: Dog, source: Dog): Dog {
-  if ((source.manualBarkAt ?? 0) > (target.manualBarkAt ?? 0)) {
-    return {
-      ...target,
-      manualBarkActive: source.manualBarkActive,
-      manualBarkBy: source.manualBarkBy,
-      manualBarkAt: source.manualBarkAt,
-      manualBarkBouts: source.manualBarkBouts ?? target.manualBarkBouts,
-    };
-  }
-  return target;
+  const merged =
+    (source.manualBarkAt ?? 0) > (target.manualBarkAt ?? 0)
+      ? {
+          ...target,
+          manualBarkActive: source.manualBarkActive,
+          manualBarkBy: source.manualBarkBy,
+          manualBarkAt: source.manualBarkAt,
+          manualBarkBouts: source.manualBarkBouts ?? target.manualBarkBouts,
+        }
+      : target;
+  return reconcileManualBarkBouts(merged);
 }
 
 /**
@@ -815,6 +816,51 @@ function mergeManualBarkBouts(
   }
   if (map.size === 0) return undefined;
   return Array.from(map.values()).sort((x, y) => x.start - y.start);
+}
+
+/**
+ * Makes the bout list agree with the marker. An open bout means "barking right now"; once the
+ * marker is off, an open bout can only describe the past. Left open it painted every later
+ * track segment as bark: a toggle-off that never saw the bout (another phone latched it while
+ * the closing copy was in flight, or a collar was re-added from the library carrying an open
+ * bout) turned the rest of the hunt dark red with no bark icon anywhere, and the button could
+ * not close it - turning the marker on when it is already off only adds a new bout.
+ *
+ * Orphaned bouts are closed at the last toggle (that is when the marker went off), not at
+ * `now`, so hours spent with the phone in a pocket are not counted as barking; when the toggle
+ * time cannot describe the bout, the dog's last known update is used instead. Of several open
+ * bouts only the newest survives while the marker is on; older ones are history.
+ */
+export function reconcileManualBarkBouts(dog: Dog, now: number = Date.now()): Dog {
+  const bouts = Array.isArray(dog.manualBarkBouts) ? dog.manualBarkBouts : [];
+  if (bouts.length === 0) return dog;
+
+  const cutoff = now - DOG_TRACK_MAX_AGE_MS;
+  const lastKnown = Math.min(now, Math.max(0, Number(dog.lastUpdated) || now));
+  const lastToggle = Math.min(now, Math.max(0, Number(dog.manualBarkAt) || 0));
+  const sorted = bouts
+    .filter((b) => Number.isFinite(b?.start))
+    .sort((a, b) => a.start - b.start);
+
+  const next: Array<{ start: number; end?: number }> = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const bout = sorted[i];
+    let end: number | undefined;
+    if (bout.end != null) {
+      end = Math.max(bout.start, Math.min(now, bout.end));
+    } else if (i === sorted.length - 1 && dog.manualBarkActive === true) {
+      end = undefined;
+    } else {
+      end = Math.max(bout.start, lastToggle >= bout.start ? lastToggle : lastKnown);
+    }
+    if (end != null && end < cutoff) continue;
+    next.push(end == null ? { start: bout.start } : { start: bout.start, end });
+  }
+
+  if (JSON.stringify(next) === JSON.stringify(bouts)) return dog;
+  return next.length > 0
+    ? { ...dog, manualBarkBouts: next }
+    : { ...dog, manualBarkBouts: undefined };
 }
 
 export function mergeDogLists(
@@ -845,12 +891,14 @@ export function mergeDogLists(
     .map((d) => stripDangerousKeys(d));
 
   if (validIncoming.length === 0) {
-    return validLocal.filter((d) => !isItemDeleted(d));
+    return validLocal
+      .filter((d) => !isItemDeleted(d))
+      .map((d) => reconcileManualBarkBouts(d));
   }
   if (validLocal.length === 0) {
     return validIncoming
       .filter((d) => !isItemDeleted(d))
-      .map((d) => ({ ...d, isActive: d.isActive !== false }));
+      .map((d) => reconcileManualBarkBouts({ ...d, isActive: d.isActive !== false }));
   }
 
   const mergedMap = new Map<string, Dog>();
@@ -968,7 +1016,9 @@ export function mergeDogLists(
     mergedMap.set(existing.id, mergedDog);
   }
 
-  return Array.from(mergedMap.values()).filter((d) => !isItemDeleted(d));
+  return Array.from(mergedMap.values())
+    .filter((d) => !isItemDeleted(d))
+    .map((d) => reconcileManualBarkBouts(d));
 }
 
 /**

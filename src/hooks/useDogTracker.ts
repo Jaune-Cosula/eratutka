@@ -12,6 +12,7 @@ import {
   addPendingDeletedIds,
   clearPendingDeletedIds,
   preferNewerManualBark,
+  reconcileManualBarkBouts,
 } from '../utils/geoUtils';
 import { playBarkSpikeAlert } from '../utils/audioAlerts';
 import { saveSessionDogs, saveSessionDogsTelemetry, saveDogToUserFirebase, removeDogFromUserFirebase, relayAuthHeaders, getActiveUid } from '../services/userService';
@@ -53,7 +54,9 @@ export function useDogTracker({
           if (sessionDogs) {
             const parsed = JSON.parse(sessionDogs);
             if (Array.isArray(parsed)) {
-              return parsed.filter((d) => d && d.id && !isDogDeleted(d));
+              return parsed
+                .filter((d) => d && d.id && !isDogDeleted(d))
+                .map((d) => reconcileManualBarkBouts(d));
             }
           }
         }
@@ -65,7 +68,9 @@ export function useDogTracker({
       if (defaultDogs) {
         const parsed = JSON.parse(defaultDogs);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((d) => d && d.id && !isDogDeleted(d));
+          return parsed
+            .filter((d) => d && d.id && !isDogDeleted(d))
+            .map((d) => reconcileManualBarkBouts(d));
         }
       }
     } catch (e) {}
@@ -482,11 +487,13 @@ export function useDogTracker({
     // again a couple of seconds later, every time.
     clearPendingDeletedIds(getDogIdentifiers(newDog));
 
-    const dogToAdd: Dog = {
+    // A collar re-added from the library can still carry the previous hunt's bark marker and
+    // bouts; an open bout would paint this hunt's trail from its old start onward.
+    const dogToAdd: Dog = reconcileManualBarkBouts({
       ...newDog,
       addedBy: newDog.addedBy || userNickname || currentUser?.displayName || 'Minä',
       addedByUid: newDog.addedByUid || currentUser?.uid,
-    };
+    });
     const updatedList = [...dogsRef.current.filter((d) => d.id !== newDog.id), dogToAdd];
     dogsRef.current = updatedList;
     setDogs(updatedList);
@@ -801,16 +808,27 @@ export function useDogTracker({
   const handleToggleManualBark = (dogId: string) => {
     const now = Date.now();
     const by = userNickname || currentUser?.displayName || 'Metsästäjä';
+    // `Math.max` guards a bout started by a phone whose clock ran ahead of this one; without it
+    // the clamped end would sit before the start and the bout could never be closed.
+    const closeOpenBouts = (list: Dog['manualBarkBouts']): NonNullable<Dog['manualBarkBouts']> =>
+      (list || []).map((b) => (b.end == null ? { ...b, end: Math.max(b.start, now) } : b));
     const updatedList = dogsRef.current.map((d) => {
       if (d.id !== dogId) return d;
       if (d.manualBarkActive) {
         // Turn off: close any still-open bout. `manualBarkAt` is stamped here too, so a merge
         // can tell this "off" is newer than a stale copy that still says "on".
-        const bouts = (d.manualBarkBouts || []).map((b) => (b.end == null ? { ...b, end: now } : b));
-        return { ...d, manualBarkActive: false, manualBarkAt: now, manualBarkBouts: bouts, lastUpdated: now };
+        return {
+          ...d,
+          manualBarkActive: false,
+          manualBarkAt: now,
+          manualBarkBouts: closeOpenBouts(d.manualBarkBouts),
+          lastUpdated: now,
+        };
       }
-      // Turn on: start a new bout.
-      const bouts = [...(d.manualBarkBouts || []), { start: now }];
+      // Turn on: a dangling open bout is history, not a live one - close it before starting the
+      // new bout, or the map would paint it as if it had run all along.
+      const bouts = closeOpenBouts(d.manualBarkBouts);
+      bouts.push({ start: now });
       return {
         ...d,
         manualBarkActive: true,

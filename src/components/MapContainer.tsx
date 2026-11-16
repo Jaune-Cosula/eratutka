@@ -598,8 +598,13 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           // most wants to find on the map, and it used to blend into the ordinary trail.
           // The collar cannot report a bark, so a manual bout (any participant latched it) also
           // highlights the segment - and because bouts are kept, past ones stay as "ajojälki".
+          // An open bout only describes a live bark while the marker is on. If it outlived the
+          // marker (a stale copy from another client, a collar back from the library) it is
+          // ignored here as well, so a dirty state can never paint the future segments.
           const inManualBout = (dog.manualBarkBouts || []).some(
-            (b) => pCurr.timestamp >= b.start && (b.end == null || pCurr.timestamp <= b.end)
+            (b) =>
+              pCurr.timestamp >= b.start &&
+              (b.end != null ? pCurr.timestamp <= b.end : dog.manualBarkActive === true)
           );
           const isBarking = inManualBout || Math.max(pCurr.barkRate || 0, pPrev.barkRate || 0) > 0;
 
